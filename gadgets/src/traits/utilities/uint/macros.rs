@@ -226,6 +226,7 @@ macro_rules! uint_impl {
         impl Number for $name {
             type IntegerType = $_type;
 
+            const SIGNED: bool = false;
             const SIZE: usize = $size;
 
             fn zero() -> Self {
@@ -237,18 +238,33 @@ macro_rules! uint_impl {
             }
 
             fn is_constant(&self) -> bool {
-                let mut constant = true;
-
                 // If any bits of self are allocated bits, return false
-                for bit in &self.bits {
-                    match *bit {
-                        Boolean::Is(ref _bit) => constant = false,
-                        Boolean::Not(ref _bit) => constant = false,
-                        Boolean::Constant(_bit) => {}
+                self.bits.iter().all(|bit| matches!(bit, Boolean::Constant(_)))
+            }
+
+            fn const_value(&self) -> Option<Self::IntegerType> {
+                let mut value = 0;
+                for (i, bit) in self.bits.iter().enumerate() {
+                    match bit {
+                        Boolean::Is(ref _bit) => return None,
+                        Boolean::Not(ref _bit) => return None,
+                        Boolean::Constant(bit) => {
+                            let bit = if *bit { 1 } else { 0 };
+                            value |= bit << i;
+                        }
                     }
                 }
+                Some(value)
+            }
 
-                constant
+            fn value(&self) -> Option<Self::IntegerType> {
+                let mut value = 0;
+                for (i, bit) in self.bits.iter().enumerate() {
+                    let bit = bit.get_value()?;
+                    let bit = if bit { 1 } else { 0 };
+                    value |= bit << i;
+                }
+                Some(value)
             }
 
             fn to_bits_le(&self) -> Vec<Boolean> {

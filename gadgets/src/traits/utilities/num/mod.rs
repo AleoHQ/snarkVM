@@ -18,9 +18,13 @@ use std::fmt::Debug;
 
 use super::boolean::Boolean;
 
+pub mod cast;
+pub use cast::*;
+
 pub trait Number: Debug + Clone + PartialOrd + Eq + PartialEq {
     type IntegerType;
     const SIZE: usize;
+    const SIGNED: bool;
 
     fn one() -> Self;
 
@@ -28,6 +32,12 @@ pub trait Number: Debug + Clone + PartialOrd + Eq + PartialEq {
 
     /// Returns true if all bits in this `Number` are constant
     fn is_constant(&self) -> bool;
+
+    /// Returns a constant value if all bits in this `Number` are constant
+    fn const_value(&self) -> Option<Self::IntegerType>;
+
+    /// Returns a value if all bits in this `Number` are known
+    fn value(&self) -> Option<Self::IntegerType>;
 
     /// Returns true if both `Number` objects have constant bits
     fn result_is_constant(first: &Self, second: &Self) -> bool {

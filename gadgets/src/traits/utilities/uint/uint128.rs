@@ -42,6 +42,7 @@ uint_impl_common!(UInt128, u128, 128);
 impl Number for UInt128 {
     type IntegerType = u128;
 
+    const SIGNED: bool = false;
     const SIZE: usize = 128;
 
     fn zero() -> Self {
@@ -52,20 +53,34 @@ impl Number for UInt128 {
         Self::constant(1)
     }
 
-    /// Returns true if all bits in this UInt128 are constant
     fn is_constant(&self) -> bool {
-        let mut constant = true;
-
         // If any bits of self are allocated bits, return false
-        for bit in &self.bits {
-            match *bit {
-                Boolean::Is(ref _bit) => constant = false,
-                Boolean::Not(ref _bit) => constant = false,
-                Boolean::Constant(_bit) => {}
+        self.bits.iter().all(|bit| matches!(bit, Boolean::Constant(_)))
+    }
+
+    fn const_value(&self) -> Option<Self::IntegerType> {
+        let mut value = 0;
+        for (i, bit) in self.bits.iter().enumerate() {
+            match bit {
+                Boolean::Is(ref _bit) => return None,
+                Boolean::Not(ref _bit) => return None,
+                Boolean::Constant(bit) => {
+                    let bit = if *bit { 1 } else { 0 };
+                    value |= bit << i;
+                }
             }
         }
+        Some(value)
+    }
 
-        constant
+    fn value(&self) -> Option<Self::IntegerType> {
+        let mut value = 0;
+        for (i, bit) in self.bits.iter().enumerate() {
+            let bit = bit.get_value()?;
+            let bit = if bit { 1 } else { 0 };
+            value |= bit << i;
+        }
+        Some(value)
     }
 
     /// Turns this `UInt128` into its little-endian byte order representation.
