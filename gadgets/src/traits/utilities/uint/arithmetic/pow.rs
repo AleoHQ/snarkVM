@@ -18,7 +18,7 @@ use crate::errors::UnsignedIntegerError;
 
 use crate::utilities::{
     alloc::AllocGadget,
-    arithmetic::Pow,
+    arithmetic::{Mul, Pow},
     boolean::Boolean,
     integer::Integer,
     select::CondSelectGadget,

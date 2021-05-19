@@ -113,6 +113,37 @@ macro_rules! cond_select_int_impl {
     };
 }
 
+macro_rules! uint_trait_common {
+    ($self: ident) => {
+        fn negate(&$self) -> Self {
+            Self {
+                bits: $self.bits.clone(),
+                negated: true,
+                value: $self.value,
+            }
+        }
+
+        fn rotr(&$self, by: usize) -> Self {
+            let by = by % <Self as Integer>::SIZE;
+
+            let bits = $self
+                .bits
+                .iter()
+                .skip(by)
+                .chain($self.bits.iter())
+                .take(<Self as Integer>::SIZE)
+                .cloned()
+                .collect();
+
+            Self {
+                bits,
+                negated: false,
+                value: $self.value.map(|v| v.rotate_right(by as u32) as <Self as Integer>::IntegerType),
+            }
+        }
+    }
+}
+
 #[macro_export]
 macro_rules! uint_impl_common {
     ($name: ident, $_type: ty, $size: expr) => {
@@ -240,32 +271,7 @@ macro_rules! uint_impl {
         uint_impl_common!($name, $_type, $size);
 
         impl UInt for $name {
-            fn negate(&self) -> Self {
-                Self {
-                    bits: self.bits.clone(),
-                    negated: true,
-                    value: self.value,
-                }
-            }
-
-            fn rotr(&self, by: usize) -> Self {
-                let by = by % $size;
-
-                let new_bits = self
-                    .bits
-                    .iter()
-                    .skip(by)
-                    .chain(self.bits.iter())
-                    .take($size)
-                    .cloned()
-                    .collect();
-
-                Self {
-                    bits: new_bits,
-                    negated: false,
-                    value: self.value.map(|v| v.rotate_right(by as u32) as $_type),
-                }
-            }
+            uint_trait_common!(self);
 
             fn addmany<F: PrimeField, CS: ConstraintSystem<F>>(
                 mut cs: CS,
@@ -394,64 +400,6 @@ macro_rules! uint_impl {
                     negated: false,
                     value: modular_value,
                 })
-            }
-
-            fn mul<F: PrimeField, CS: ConstraintSystem<F>>(
-                &self,
-                mut cs: CS,
-                other: &Self,
-            ) -> Result<Self, UnsignedIntegerError> {
-                // pseudocode:
-                //
-                // res = 0;
-                // shifted_self = self;
-                // for bit in other.bits {
-                //   if bit {
-                //     res += shifted_self;
-                //   }
-                //   shifted_self = shifted_self << 1;
-                // }
-                // return res
-
-                let is_constant = Boolean::constant(Self::result_is_constant(&self, &other));
-                let constant_result = Self::constant(0 as $_type);
-                let allocated_result = Self::alloc(
-                    &mut cs.ns(|| format!("allocated_0u{}", $size)),
-                    || Ok(0 as $_type),
-                )?;
-                let zero_result = Self::conditionally_select(
-                    &mut cs.ns(|| "constant_or_allocated"),
-                    &is_constant,
-                    &constant_result,
-                    &allocated_result,
-                )?;
-
-                let mut left_shift = self.clone();
-
-                let partial_products = other
-                    .bits
-                    .iter()
-                    .enumerate()
-                    .map(|(i, bit)| {
-                        let current_left_shift = left_shift.clone();
-                        left_shift = Self::addmany(&mut cs.ns(|| format!("shift_left_{}", i)), &[
-                            left_shift.clone(),
-                            left_shift.clone(),
-                        ])
-                        .unwrap();
-
-                        Self::conditionally_select(
-                            &mut cs.ns(|| format!("calculate_product_{}", i)),
-                            &bit,
-                            &current_left_shift,
-                            &zero_result,
-                        )
-                        .unwrap()
-                    })
-                    .collect::<Vec<Self>>();
-
-                Self::addmany(&mut cs.ns(|| format!("partial_products")), &partial_products)
-                    .map_err(UnsignedIntegerError::SynthesisError)
             }
         }
     };

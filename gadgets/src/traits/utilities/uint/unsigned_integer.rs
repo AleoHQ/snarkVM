@@ -25,7 +25,6 @@ use crate::{
         ToBitsBEGadget,
         ToBytesGadget,
     },
-    UnsignedIntegerError,
 };
 use snarkvm_fields::{Field, FieldParameters, PrimeField, ToConstraintField};
 use snarkvm_r1cs::{errors::SynthesisError, Assignment, ConstraintSystem, LinearCombination};
@@ -47,10 +46,6 @@ pub trait UInt: Integer {
 
     /// Perform modular addition of several `UInt` objects.
     fn addmany<F: PrimeField, CS: ConstraintSystem<F>>(cs: CS, operands: &[Self]) -> Result<Self, SynthesisError>;
-
-    /// Perform Bitwise multiplication of two `UInt` objects.
-    /// Reference: https://en.wikipedia.org/wiki/Binary_multiplier
-    fn mul<F: PrimeField, CS: ConstraintSystem<F>>(&self, cs: CS, other: &Self) -> Result<Self, UnsignedIntegerError>;
 }
 
 // These methods are used throughout snarkvm-gadgets exclusively by UInt8
