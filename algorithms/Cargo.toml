@@ -86,6 +86,9 @@ version = "2"
 [dependencies.digest]
 version = "0.9"
 
+[dependencies.indexmap]
+version = "1.6"
+
 [dependencies.itertools]
 version = "0.10.0"
 

@@ -23,6 +23,8 @@ use snarkvm_fields::Field;
 use snarkvm_r1cs::{Index, LinearCombination};
 use snarkvm_utilities::{errors::SerializationError, serialize::*, FromBytes, ToBytes};
 
+use indexmap::IndexSet;
+
 use std::io::{
     Read,
     Result as IoResult,
@@ -424,15 +426,25 @@ impl<E: PairingEngine> From<VerifyingKey<E>> for PreparedVerifyingKey<E> {
     }
 }
 
-fn push_constraints<F: Field>(l: LinearCombination<F>, constraints: &mut Vec<Vec<(F, Index)>>) {
+pub type InternedField = usize;
+
+#[derive(Default)]
+pub struct ConstraintSet {
+    pub at: Vec<(InternedField, Index)>,
+    pub bt: Vec<(InternedField, Index)>,
+    pub ct: Vec<(InternedField, Index)>,
+}
+
+fn push_constraints<F: Field>(
+    l: LinearCombination<F>,
+    constraint: &mut Vec<(usize, Index)>,
+    interned_fields: &mut IndexSet<F>,
+) {
     let vars_and_coeffs = l.as_ref();
-    let mut vec = Vec::with_capacity(vars_and_coeffs.len());
+    constraint.reserve(vars_and_coeffs.len());
 
     for (var, coeff) in vars_and_coeffs {
-        match var.get_unchecked() {
-            Index::Public(i) => vec.push((*coeff, Index::Public(i))),
-            Index::Private(i) => vec.push((*coeff, Index::Private(i))),
-        }
+        let interned_coeff = interned_fields.insert_full(*coeff).0;
+        constraint.push((interned_coeff, var.get_unchecked()));
     }
-    constraints.push(vec);
 }

@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with the snarkVM library. If not, see <https://www.gnu.org/licenses/>.
 
-use super::{push_constraints, r1cs_to_qap::R1CStoQAP, Parameters, Proof};
+use super::{push_constraints, r1cs_to_qap::R1CStoQAP, ConstraintSet, InternedField, Parameters, Proof};
 use crate::{cfg_into_iter, msm::VariableBaseMSM};
 use snarkvm_curves::traits::{AffineCurve, Group, PairingEngine, ProjectiveCurve};
 use snarkvm_fields::{One, PrimeField, Zero};
@@ -24,6 +24,7 @@ use snarkvm_profiler::{end_timer, start_timer};
 use snarkvm_r1cs::{ConstraintSynthesizer, ConstraintSystem, Index, LinearCombination, Variable};
 use snarkvm_utilities::rand::UniformRand;
 
+use indexmap::IndexSet;
 use rand::Rng;
 
 #[cfg(feature = "parallel")]
@@ -31,13 +32,12 @@ use rayon::prelude::*;
 
 pub struct ProvingAssignment<E: PairingEngine> {
     // Constraints
-    pub(crate) at: Vec<Vec<(E::Fr, Index)>>,
-    pub(crate) bt: Vec<Vec<(E::Fr, Index)>>,
-    pub(crate) ct: Vec<Vec<(E::Fr, Index)>>,
+    pub(crate) constraints: Vec<ConstraintSet>,
+    pub(crate) interned_fields: IndexSet<E::Fr>,
 
     // Assignments of variables
-    pub(crate) public_variables: Vec<E::Fr>,
-    pub(crate) private_variables: Vec<E::Fr>,
+    pub(crate) public_variables: Vec<InternedField>,
+    pub(crate) private_variables: Vec<InternedField>,
 }
 
 impl<E: PairingEngine> ConstraintSystem<E::Fr> for ProvingAssignment<E> {
@@ -51,7 +51,8 @@ impl<E: PairingEngine> ConstraintSystem<E::Fr> for ProvingAssignment<E> {
         AR: AsRef<str>,
     {
         let index = self.private_variables.len();
-        self.private_variables.push(f()?);
+        let interned_var = self.interned_fields.insert_full(f()?).0;
+        self.private_variables.push(interned_var);
         Ok(Variable::new_unchecked(Index::Private(index)))
     }
 
@@ -63,7 +64,8 @@ impl<E: PairingEngine> ConstraintSystem<E::Fr> for ProvingAssignment<E> {
         AR: AsRef<str>,
     {
         let index = self.public_variables.len();
-        self.public_variables.push(f()?);
+        let interned_var = self.interned_fields.insert_full(f()?).0;
+        self.public_variables.push(interned_var);
         Ok(Variable::new_unchecked(Index::Public(index)))
     }
 
@@ -76,9 +78,25 @@ impl<E: PairingEngine> ConstraintSystem<E::Fr> for ProvingAssignment<E> {
         LB: FnOnce(LinearCombination<E::Fr>) -> LinearCombination<E::Fr>,
         LC: FnOnce(LinearCombination<E::Fr>) -> LinearCombination<E::Fr>,
     {
-        push_constraints(a(LinearCombination::zero()), &mut self.at);
-        push_constraints(b(LinearCombination::zero()), &mut self.bt);
-        push_constraints(c(LinearCombination::zero()), &mut self.ct);
+        let mut constraint_set = ConstraintSet::default();
+
+        push_constraints(
+            a(LinearCombination::zero()),
+            &mut constraint_set.at,
+            &mut self.interned_fields,
+        );
+        push_constraints(
+            b(LinearCombination::zero()),
+            &mut constraint_set.bt,
+            &mut self.interned_fields,
+        );
+        push_constraints(
+            c(LinearCombination::zero()),
+            &mut constraint_set.ct,
+            &mut self.interned_fields,
+        );
+
+        self.constraints.push(constraint_set);
     }
 
     fn push_namespace<NR, N>(&mut self, _: N)
@@ -98,7 +116,7 @@ impl<E: PairingEngine> ConstraintSystem<E::Fr> for ProvingAssignment<E> {
     }
 
     fn num_constraints(&self) -> usize {
-        self.at.len()
+        self.constraints.len()
     }
 
     fn num_public_variables(&self) -> usize {
@@ -141,9 +159,8 @@ where
 {
     let prover_time = start_timer!(|| "Prover");
     let mut prover = ProvingAssignment {
-        at: vec![],
-        bt: vec![],
-        ct: vec![],
+        constraints: Default::default(),
+        interned_fields: Default::default(),
         public_variables: vec![],
         private_variables: vec![],
     };
@@ -164,11 +181,11 @@ where
         .public_variables
         .iter()
         .skip(1)
-        .map(|s| s.into_repr())
+        .map(|s| prover.interned_fields.get_index(*s).unwrap().into_repr())
         .collect::<Vec<_>>();
 
-    let aux_assignment = cfg_into_iter!(prover.private_variables)
-        .map(|s| s.into_repr())
+    let aux_assignment = cfg_iter!(prover.private_variables)
+        .map(|s| prover.interned_fields.get_index(*s).unwrap().into_repr())
         .collect::<Vec<_>>();
 
     let assignment = [&input_assignment[..], &aux_assignment[..]].concat();

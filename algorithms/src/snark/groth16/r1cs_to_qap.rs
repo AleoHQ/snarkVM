@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with the snarkVM library. If not, see <https://www.gnu.org/licenses/>.
 
-use super::{generator::KeypairAssembly, prover::ProvingAssignment, Vec};
+use super::{generator::KeypairAssembly, prover::ProvingAssignment, InternedField, Vec};
 use crate::{cfg_iter, cfg_iter_mut, fft::EvaluationDomain};
 use snarkvm_curves::traits::PairingEngine;
 use snarkvm_fields::Zero;
@@ -24,16 +24,25 @@ use snarkvm_r1cs::{
     Index,
 };
 
+use indexmap::IndexSet;
+
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
-fn evaluate_constraint<E: PairingEngine>(terms: &[(E::Fr, Index)], assignment: &[E::Fr], num_input: usize) -> E::Fr {
+fn evaluate_constraint<E: PairingEngine>(
+    terms: &[(InternedField, Index)],
+    interned_fields: &IndexSet<E::Fr>,
+    public_variables: &[InternedField],
+    private_variables: &[InternedField],
+) -> E::Fr {
     let mut acc = E::Fr::zero();
-    for &(coeff, index) in terms {
-        let val = match index {
-            Index::Public(i) => assignment[i],
-            Index::Private(i) => assignment[num_input + i],
+    for &(interned_coeff, index) in terms {
+        let interned_val = match index {
+            Index::Public(i) => public_variables[i],
+            Index::Private(i) => private_variables[i],
         };
+        let coeff = interned_fields.get_index(interned_coeff).unwrap();
+        let val = *interned_fields.get_index(interned_val).unwrap();
         acc += &(val * &coeff);
     }
     acc
@@ -46,10 +55,18 @@ impl R1CStoQAP {
     #[allow(clippy::many_single_char_names)]
     #[allow(clippy::type_complexity)]
     pub(crate) fn instance_map_with_evaluation<E: PairingEngine>(
-        assembly: &KeypairAssembly<E>,
+        assembly: KeypairAssembly<E>,
         t: &E::Fr,
     ) -> SynthesisResult<(Vec<E::Fr>, Vec<E::Fr>, Vec<E::Fr>, E::Fr, usize, usize)> {
-        let domain_size = assembly.num_constraints() + (assembly.num_public_variables - 1) + 1;
+        let KeypairAssembly {
+            num_public_variables,
+            num_private_variables,
+            constraints,
+            interned_fields,
+        } = assembly;
+        let num_constraints = constraints.len();
+
+        let domain_size = num_constraints + (num_public_variables - 1) + 1;
         let domain = EvaluationDomain::<E::Fr>::new(domain_size).ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
         let domain_size = domain.size();
 
@@ -60,40 +77,43 @@ impl R1CStoQAP {
         let u = domain.evaluate_all_lagrange_coefficients(*t);
         end_timer!(coefficients_time);
 
-        let qap_num_variables = (assembly.num_public_variables - 1) + assembly.num_private_variables;
+        let qap_num_variables = (num_public_variables - 1) + num_private_variables;
 
         let mut a = vec![E::Fr::zero(); qap_num_variables + 1];
         let mut b = vec![E::Fr::zero(); qap_num_variables + 1];
         let mut c = vec![E::Fr::zero(); qap_num_variables + 1];
 
-        for i in 0..assembly.num_public_variables {
-            a[i] = u[assembly.num_constraints() + i];
+        for i in 0..num_public_variables {
+            a[i] = u[num_constraints + i];
         }
 
-        for (i, x) in u.iter().enumerate().take(assembly.num_constraints()) {
-            for &(ref coeff, index) in assembly.at[i].iter() {
+        for (cstr, x) in constraints.iter().zip(u.iter()) {
+            for &(interned_coeff, index) in cstr.at.iter() {
                 let index = match index {
                     Index::Public(i) => i,
-                    Index::Private(i) => assembly.num_public_variables + i,
+                    Index::Private(i) => num_public_variables + i,
                 };
 
+                let coeff = interned_fields.get_index(interned_coeff).unwrap();
                 a[index] += &(*x * coeff);
             }
-            for &(ref coeff, index) in assembly.bt[i].iter() {
+            for &(interned_coeff, index) in cstr.bt.iter() {
                 let index = match index {
                     Index::Public(i) => i,
-                    Index::Private(i) => assembly.num_public_variables + i,
+                    Index::Private(i) => num_public_variables + i,
                 };
 
-                b[index] += &(u[i] * coeff);
+                let coeff = interned_fields.get_index(interned_coeff).unwrap();
+                b[index] += &(*x * coeff);
             }
-            for &(ref coeff, index) in assembly.ct[i].iter() {
+            for &(interned_coeff, index) in cstr.ct.iter() {
                 let index = match index {
                     Index::Public(i) => i,
-                    Index::Private(i) => assembly.num_public_variables + i,
+                    Index::Private(i) => num_public_variables + i,
                 };
 
-                c[index] += &(u[i] * coeff);
+                let coeff = interned_fields.get_index(interned_coeff).unwrap();
+                c[index] += &(*x * coeff);
             }
         }
 
@@ -106,8 +126,6 @@ impl R1CStoQAP {
         let num_inputs = prover.public_variables.len();
         let num_constraints = prover.num_constraints();
 
-        let full_input_assignment = [&prover.public_variables[..], &prover.private_variables[..]].concat();
-
         let domain = EvaluationDomain::<E::Fr>::new(num_constraints + num_inputs)
             .ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
         let domain_size = domain.size();
@@ -117,14 +135,30 @@ impl R1CStoQAP {
 
         cfg_iter_mut!(a[..num_constraints])
             .zip(cfg_iter_mut!(b[..num_constraints]))
-            .zip(cfg_iter!(&prover.at))
-            .zip(cfg_iter!(&prover.bt))
-            .for_each(|(((a, b), at_i), bt_i)| {
-                *a = evaluate_constraint::<E>(&at_i, &full_input_assignment, num_inputs);
-                *b = evaluate_constraint::<E>(&bt_i, &full_input_assignment, num_inputs);
+            .zip(cfg_iter!(&prover.constraints))
+            .for_each(|((a, b), cstr)| {
+                *a = evaluate_constraint::<E>(
+                    &cstr.at,
+                    &prover.interned_fields,
+                    &prover.public_variables,
+                    &prover.private_variables,
+                );
+                *b = evaluate_constraint::<E>(
+                    &cstr.bt,
+                    &prover.interned_fields,
+                    &prover.public_variables,
+                    &prover.private_variables,
+                );
             });
 
-        a[num_constraints..(num_inputs + num_constraints)].clone_from_slice(&full_input_assignment[..num_inputs]);
+        a[num_constraints..][..num_inputs].clone_from_slice(
+            prover
+                .public_variables
+                .iter()
+                .map(|v| *prover.interned_fields.get_index(*v).unwrap())
+                .collect::<Vec<_>>()
+                .as_slice(),
+        );
 
         domain.ifft_in_place(&mut a);
         domain.ifft_in_place(&mut b);
@@ -137,10 +171,16 @@ impl R1CStoQAP {
         drop(b);
 
         let mut c = vec![zero; domain_size];
-        cfg_iter_mut!(c[..prover.num_constraints()])
-            .enumerate()
-            .for_each(|(i, c)| {
-                *c = evaluate_constraint::<E>(&prover.ct[i], &full_input_assignment, num_inputs);
+
+        cfg_iter_mut!(c[..num_constraints])
+            .zip(cfg_iter!(&prover.constraints))
+            .for_each(|(c, cstr)| {
+                *c = evaluate_constraint::<E>(
+                    &cstr.ct,
+                    &prover.interned_fields,
+                    &prover.public_variables,
+                    &prover.private_variables,
+                );
             });
 
         domain.ifft_in_place(&mut c);

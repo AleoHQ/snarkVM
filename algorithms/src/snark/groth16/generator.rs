@@ -14,14 +14,15 @@
 // You should have received a copy of the GNU General Public License
 // along with the snarkVM library. If not, see <https://www.gnu.org/licenses/>.
 
-use super::{push_constraints, r1cs_to_qap::R1CStoQAP, Parameters, VerifyingKey};
+use super::{push_constraints, r1cs_to_qap::R1CStoQAP, ConstraintSet, Parameters, VerifyingKey};
 use crate::{cfg_into_iter, cfg_iter, fft::EvaluationDomain, msm::FixedBaseMSM};
 use snarkvm_curves::traits::{Group, PairingEngine, ProjectiveCurve};
 use snarkvm_fields::{Field, One, PrimeField, Zero};
 use snarkvm_profiler::{end_timer, start_timer};
 use snarkvm_r1cs::{ConstraintSynthesizer, ConstraintSystem, Index, LinearCombination, SynthesisError, Variable};
-use snarkvm_utilities::{errors::SerializationError, rand::UniformRand, serialize::*};
+use snarkvm_utilities::{rand::UniformRand, serialize::*};
 
+use indexmap::IndexSet;
 use rand::Rng;
 
 #[cfg(feature = "parallel")]
@@ -45,13 +46,11 @@ where
 
 /// This is our assembly structure that we'll use to synthesize the
 /// circuit into a QAP.
-#[derive(Clone, Debug, CanonicalSerialize, CanonicalDeserialize)]
 pub struct KeypairAssembly<E: PairingEngine> {
     pub num_public_variables: usize,
     pub num_private_variables: usize,
-    pub at: Vec<Vec<(E::Fr, Index)>>,
-    pub bt: Vec<Vec<(E::Fr, Index)>>,
-    pub ct: Vec<Vec<(E::Fr, Index)>>,
+    pub constraints: Vec<ConstraintSet>,
+    pub interned_fields: IndexSet<E::Fr>,
 }
 
 impl<E: PairingEngine> ConstraintSystem<E::Fr> for KeypairAssembly<E> {
@@ -98,9 +97,25 @@ impl<E: PairingEngine> ConstraintSystem<E::Fr> for KeypairAssembly<E> {
         LB: FnOnce(LinearCombination<E::Fr>) -> LinearCombination<E::Fr>,
         LC: FnOnce(LinearCombination<E::Fr>) -> LinearCombination<E::Fr>,
     {
-        push_constraints(a(LinearCombination::zero()), &mut self.at);
-        push_constraints(b(LinearCombination::zero()), &mut self.bt);
-        push_constraints(c(LinearCombination::zero()), &mut self.ct);
+        let mut constraint_set = ConstraintSet::default();
+
+        push_constraints(
+            a(LinearCombination::zero()),
+            &mut constraint_set.at,
+            &mut self.interned_fields,
+        );
+        push_constraints(
+            b(LinearCombination::zero()),
+            &mut constraint_set.bt,
+            &mut self.interned_fields,
+        );
+        push_constraints(
+            c(LinearCombination::zero()),
+            &mut constraint_set.ct,
+            &mut self.interned_fields,
+        );
+
+        self.constraints.push(constraint_set);
     }
 
     fn push_namespace<NR, N>(&mut self, _: N)
@@ -120,7 +135,7 @@ impl<E: PairingEngine> ConstraintSystem<E::Fr> for KeypairAssembly<E> {
     }
 
     fn num_constraints(&self) -> usize {
-        self.at.len()
+        self.constraints.len()
     }
 
     fn num_public_variables(&self) -> usize {
@@ -150,9 +165,8 @@ where
     let mut assembly = KeypairAssembly {
         num_public_variables: 0,
         num_private_variables: 0,
-        at: vec![],
-        bt: vec![],
-        ct: vec![],
+        constraints: Default::default(),
+        interned_fields: Default::default(),
     };
 
     // Allocate the "one" input variable
@@ -163,10 +177,12 @@ where
     circuit.generate_constraints(&mut assembly)?;
     end_timer!(synthesis_time);
 
+    let num_public_variables = assembly.num_public_variables;
+
     ///////////////////////////////////////////////////////////////////////////
     let domain_time = start_timer!(|| "Constructing evaluation domain");
 
-    let domain_size = assembly.num_constraints() + (assembly.num_public_variables - 1) + 1;
+    let domain_size = assembly.num_constraints() + (num_public_variables - 1) + 1;
     let domain = EvaluationDomain::<E::Fr>::new(domain_size).ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
     let t = domain.sample_element_outside_domain(rng);
 
@@ -174,7 +190,7 @@ where
     ///////////////////////////////////////////////////////////////////////////
 
     let reduction_time = start_timer!(|| "R1CS to QAP Instance Map with Evaluation");
-    let (a, b, c, zt, qap_num_variables, m_raw) = R1CStoQAP::instance_map_with_evaluation::<E>(&assembly, &t)?;
+    let (a, b, c, zt, qap_num_variables, m_raw) = R1CStoQAP::instance_map_with_evaluation::<E>(assembly, &t)?;
     end_timer!(reduction_time);
 
     // Compute query densities
@@ -191,9 +207,9 @@ where
     let gamma_inverse = gamma.inverse().ok_or(SynthesisError::UnexpectedIdentity)?;
     let delta_inverse = delta.inverse().ok_or(SynthesisError::UnexpectedIdentity)?;
 
-    let gamma_abc = cfg_iter!(a[0..assembly.num_public_variables])
-        .zip(&b[0..assembly.num_public_variables])
-        .zip(&c[0..assembly.num_public_variables])
+    let gamma_abc = cfg_iter!(a[0..num_public_variables])
+        .zip(&b[0..num_public_variables])
+        .zip(&c[0..num_public_variables])
         .map(|((a, b), c)| (beta * a + &(alpha * b) + c) * &gamma_inverse)
         .collect::<Vec<_>>();
 
@@ -258,7 +274,7 @@ where
     // Compute the L-query
     let l_time = start_timer!(|| "Calculate L");
     let l_query = FixedBaseMSM::multi_scalar_mul::<E::G1Projective>(scalar_bits, g1_window, &g1_table, &l);
-    let mut l_query = l_query[assembly.num_public_variables..].to_vec();
+    let mut l_query = l_query[num_public_variables..].to_vec();
     end_timer!(l_time);
 
     end_timer!(proving_key_time);

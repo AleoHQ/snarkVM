@@ -1522,6 +1522,7 @@ dependencies = [
  "csv",
  "derivative",
  "digest",
+ "indexmap",
  "itertools 0.10.0",
  "rand",
  "rand_chacha",
