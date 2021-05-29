@@ -163,10 +163,6 @@ fn test_int64_sub_constants() {
         let a: i64 = rng.gen();
         let b: i64 = rng.gen();
 
-        if b.checked_neg().is_none() {
-            // negate with overflows will fail: -128
-            continue;
-        }
         let expected = match a.checked_sub(b) {
             // subtract with overflow will fail: -0
             Some(valid) => valid,
@@ -194,10 +190,6 @@ fn test_int64_sub() {
         let a: i64 = rng.gen();
         let b: i64 = rng.gen();
 
-        if b.checked_neg().is_none() {
-            // negate with overflows will fail: -9223372036854775808
-            continue;
-        }
         let expected = match a.checked_sub(b) {
             // subtract with overflow will fail: -0
             Some(valid) => valid,

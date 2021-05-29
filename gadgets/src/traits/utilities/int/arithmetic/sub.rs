@@ -17,8 +17,10 @@
 use crate::{
     errors::SignedIntegerError,
     utilities::{
+        alloc::AllocGadget,
         arithmetic::{Add, Neg, Sub},
         int::*,
+        Integer,
     },
 };
 use snarkvm_fields::PrimeField;
@@ -30,11 +32,32 @@ macro_rules! sub_int_impl {
             type ErrorType = SignedIntegerError;
 
             fn sub<CS: ConstraintSystem<F>>(&self, mut cs: CS, other: &Self) -> Result<Self, Self::ErrorType> {
-                // Negate other
-                let other_neg = other.neg(cs.ns(|| format!("negate")))?;
+                // use an alternative subtraction algorithm when the other operand can't be negated without overflowing
+                if other.value == Some(<Self as Integer>::IntegerType::MIN) {
+                    // if both values are IntegerType::MIN, neither can be negated without an overflow, but the result is just zero
+                    if self.value == Some(<Self as Integer>::IntegerType::MIN) {
+                        if self.is_constant() {
+                            return Ok(Self::zero());
+                        } else {
+                            return <$gadget>::alloc(cs.ns(|| "zero"), || Ok(0)).map_err(|e| e.into());
+                        }
+                    }
 
-                // self + negated other
-                self.add(cs.ns(|| format!("add_complement")), &other_neg)
+                    // negate self
+                    let self_neg = self.neg(cs.ns(|| format!("negate")))?;
+
+                    // negated self + other
+                    let added = self_neg.add(cs.ns(|| format!("add_complement")), &other)?;
+
+                    // negate the result
+                    added.neg(cs.ns(|| format!("negate result")))
+                } else {
+                    // Negate other
+                    let other_neg = other.neg(cs.ns(|| format!("negate")))?;
+
+                    // self + negated other
+                    self.add(cs.ns(|| format!("add_complement")), &other_neg)
+                }
             }
         }
     )*)
