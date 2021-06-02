@@ -60,6 +60,23 @@ jobs:
       - clear_environment:
           cache_key: snarkvm-stable-cache
 
+#  codecov:
+#    machine: true
+#    resource_class: 2xlarge
+#    steps:
+#      - checkout
+#      - run:
+#          name: Pull tarpaulin Docker image
+#          command: docker pull xd009642/tarpaulin:latest
+#      - run:
+#          name: Generate coverage report
+#          command: >
+#            docker run --security-opt seccomp=unconfined -v "${PWD}:/volume" xd009642/tarpaulin
+#            cargo tarpaulin -v --workspace --manifest-path ./Cargo.toml --ciserver circle-ci --out Xml
+#      - run:
+#          name: Upload report to Codecov
+#          command: bash <(curl -s https://codecov.io/bash)
+
   codecov:
     machine:
       image: ubuntu-1604:202004-01
@@ -75,6 +92,26 @@ jobs:
             docker run --security-opt seccomp=unconfined -v ~/project/project/:/home/circleci/project/
             howardwu/snarkos-codecov:2021-03-25 bash /home/circleci/project/.resources/kcov.sh
       - run: cd ./project/ && bash <(curl -s https://codecov.io/bash)
+
+#  codecov:
+#    docker:
+#      - image: cimg/rust:1.51.0
+#    resource_class: 2xlarge
+#    steps:
+#      - checkout
+#      - setup_environment:
+#          cache_key: snarkvm-codecov-cache
+#      - run:
+#          name: Install tarpaulin
+#          command: cargo install cargo-tarpaulin
+#      - run:
+#          name: Build and run coverage
+#          no_output_timeout: 30m
+#          command: |
+#            cargo tarpaulin -v --workspace --manifest-path ./Cargo.toml --ciserver circle-ci --out Xml
+#            bash <(curl -s https://codecov.io/bash)
+#      - clear_environment:
+#          cache_key: snarkvm-codecov-cache
 
   rust-nightly:
     docker:
