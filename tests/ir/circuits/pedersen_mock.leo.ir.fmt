@@ -1,0 +1,23 @@
+decl f0: <0>
+  store &v1, ((v0), (), (), ())
+  ainitn &v3, 512, 0
+  store &v4, v3
+  call &v5, f1, v4
+  store &v6, v5
+  call &v7, f2, v6, v2
+  store &v8, v7
+  eq &v9, v8, 0
+  retn v9
+decl f1: <10>
+  retn (v10)
+decl f2: <11>
+  store &v13, 0
+  repeat 7, &v14, 0, 512
+    aget &v15, v12, v14
+    tget &v16, v11, 0
+    aget &v17, v16, v14
+    pick &v18, v15, v17, 0
+    store &v19, v18
+    add &v20, v13, v19
+    store &v13, v20
+  retn v13

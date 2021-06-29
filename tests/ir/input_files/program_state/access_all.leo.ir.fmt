@@ -1,0 +1,12 @@
+decl f0: <0>
+  store &v16, ((v0), (v1, v2, v3, v4, v5, v6, v7, v8, v9), (v10, v11), (v12, v13, v14, v15))
+  store &v17, aleo1qnr4dkkvkgfqph0vzc3y6z2eu975wnpz2925ntjccd5cfqxtyu8sta57j8
+  tget &v18, v16, 2
+  tget &v19, v18, 1
+  ainitn &v20, 32, 0
+  eq &v21, v19, v20
+  tget &v22, v16, 3
+  tget &v23, v22, 2
+  eq &v24, v23, 0
+  and &v25, v21, v24
+  retn v25

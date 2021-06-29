@@ -1,0 +1,24 @@
+decl f0: <0>
+  store &v1, ((v0), (), (), ())
+  log INFO, "x: ", v2
+  ainitn &v3, 3, 0
+  ainitn &v4, 2, v3
+  ainitn &v5, 2, v4
+  store &v6, v5
+  log INFO, "y: ", v6
+  aget &v7, v2, 0
+  aget &v8, v7, 0
+  aget &v9, v8, 0
+  aget &v10, v6, 0
+  aget &v11, v10, 0
+  aget &v12, v11, 0
+  eq &v13, v9, v12
+  aget &v14, v2, 1
+  aget &v15, v14, 1
+  aget &v16, v15, 2
+  aget &v17, v6, 1
+  aget &v18, v17, 1
+  aget &v19, v18, 2
+  eq &v20, v16, v19
+  and &v21, v13, v20
+  retn v21

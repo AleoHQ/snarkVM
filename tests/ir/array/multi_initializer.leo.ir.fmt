@@ -1,0 +1,13 @@
+decl f0: <0>
+  store &v1, ((v0), (), (), ())
+  ainitn &v3, 2, 1
+  ainitn &v4, 2, v3
+  ainitn &v5, 2, v4
+  store &v6, v5
+  ainitn &v7, 2, 1
+  ainitn &v8, 2, v7
+  ainitn &v9, 2, v8
+  store &v10, v9
+  eq &v11, v6, v10
+  eq &v12, v11, v2
+  retn v12

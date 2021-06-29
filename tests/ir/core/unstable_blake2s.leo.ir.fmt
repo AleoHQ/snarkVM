@@ -1,0 +1,8 @@
+decl f0: <0>
+  store &v1, ((v0), (), (), ())
+  ainitn &v3, 32, 1
+  store &v4, v3
+  ccall &v5, 'blake2s', v4, v2
+  store &v6, v5
+  log INFO, "Result: ", v6
+  retn v6
