@@ -1,0 +1,52 @@
+name: Website
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  benchmark:
+    name: Benchmark
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          override: true
+
+      - uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-bench-${{ hashFiles('**/Cargo.lock') }}
+
+      # Run benchmark and stores the output to a file
+      - name: Benchmark
+        run: |
+          cargo bench --all | tee output.txt
+      # Download previous benchmark result from cache (if exists)
+      - name: Download previous benchmark data
+        uses: actions/cache@v1
+        with:
+          path: ./cache
+          key: ${{ runner.os }}-benchmark
+
+      - name: Load benchmark
+        run: |
+          mkdir ~/.ssh
+          echo "${{ secrets.BENCHMARK_DEPLOY_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          eval $(ssh-agent -s)
+          ssh-add -k ~/.ssh/id_rsa
+          git clone ${{ secrets.BENCHMARK_REPOSITORY }}
+          cd aleo-action-benchmark/.release || exit 1
+          mv ../../output.txt .
+          node index.js ${{ secrets.PAT_TOKEN }}

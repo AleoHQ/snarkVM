@@ -2,7 +2,7 @@
 name = "snarkvm"
 version = "0.6.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
-description = "A decentralized virtual machine"
+description = "A distributed virtual machine"
 homepage = "https://aleo.org"
 repository = "https://github.com/AleoHQ/snarkVM"
 keywords = [

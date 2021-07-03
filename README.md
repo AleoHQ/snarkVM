@@ -48,7 +48,7 @@ We recommend installing Rust using [rustup](https://www.rustup.rs/). You can ins
   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
   ```
 
-- Windows (64-bit):  
+- Windows:  
   
   Download the [Windows 64-bit executable](https://win.rustup.rs/x86_64) or
   [Windows 32-bit executable](https://win.rustup.rs/i686) and follow the on-screen instructions.
