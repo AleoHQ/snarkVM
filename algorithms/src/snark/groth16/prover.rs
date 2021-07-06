@@ -21,7 +21,7 @@ use snarkvm_fields::{One, PrimeField, Zero};
 use snarkvm_r1cs::errors::SynthesisError;
 
 use snarkvm_profiler::{end_timer, start_timer};
-use snarkvm_r1cs::{ConstraintSynthesizer, ConstraintSystem, Index, LinearCombination, Variable};
+use snarkvm_r1cs::{ConstraintSynthesizer, ConstraintSystem, Index, LinearCombination, OptimizationGoal, Variable};
 use snarkvm_utilities::rand::UniformRand;
 
 use core::ops::Mul;
@@ -39,6 +39,8 @@ pub struct ProvingAssignment<E: PairingEngine> {
     // Assignments of variables
     pub(crate) public_variables: Vec<E::Fr>,
     pub(crate) private_variables: Vec<E::Fr>,
+
+    pub(crate) optimization_goal: OptimizationGoal,
 }
 
 impl<E: PairingEngine> ConstraintSystem<E::Fr> for ProvingAssignment<E> {
@@ -109,6 +111,19 @@ impl<E: PairingEngine> ConstraintSystem<E::Fr> for ProvingAssignment<E> {
     fn num_private_variables(&self) -> usize {
         self.private_variables.len()
     }
+
+    fn optimization_goal(&self) -> OptimizationGoal {
+        self.optimization_goal.clone()
+    }
+
+    fn set_optimization_goal(&mut self, goal: OptimizationGoal) {
+        // `set_optimization_type` should only be executed before any constraint or value is created.
+        assert_eq!(self.num_public_variables(), 0);
+        assert_eq!(self.num_private_variables(), 0);
+        assert_eq!(self.num_constraints(), 0);
+
+        self.optimization_goal = goal;
+    }
 }
 
 pub fn create_random_proof<E, C, R>(
@@ -147,6 +162,7 @@ where
         ct: vec![],
         public_variables: vec![],
         private_variables: vec![],
+        optimization_goal: OptimizationGoal::Constraints,
     };
 
     // Allocate the "one" input variable

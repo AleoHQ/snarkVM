@@ -24,6 +24,7 @@ use snarkvm_r1cs::{
     ConstraintSystem,
     Index,
     LinearCombination,
+    OptimizationGoal,
     Variable,
 };
 use snarkvm_utilities::rand::UniformRand;
@@ -90,6 +91,7 @@ pub struct ProvingAssignment<E: PairingEngine> {
     pub(crate) num_public_variables: usize,
     pub(crate) num_private_variables: usize,
     pub(crate) num_constraints: usize,
+    pub(crate) optimization_goal: OptimizationGoal,
 }
 
 impl<E: PairingEngine> ProvingAssignment<E> {
@@ -199,6 +201,19 @@ impl<E: PairingEngine> ConstraintSystem<E::Fr> for ProvingAssignment<E> {
     fn num_private_variables(&self) -> usize {
         self.num_private_variables
     }
+
+    fn optimization_goal(&self) -> OptimizationGoal {
+        self.optimization_goal.clone()
+    }
+
+    fn set_optimization_goal(&mut self, goal: OptimizationGoal) {
+        // `set_optimization_type` should only be executed before any constraint or value is created.
+        assert_eq!(self.num_public_variables(), 0);
+        assert_eq!(self.num_private_variables(), 0);
+        assert_eq!(self.num_constraints(), 0);
+
+        self.optimization_goal = goal;
+    }
 }
 
 pub fn create_random_proof<E, C, R>(
@@ -242,6 +257,7 @@ where
         num_public_variables: 0,
         num_private_variables: 0,
         num_constraints: 0,
+        optimization_goal: OptimizationGoal::Constraints,
     };
 
     // Allocate the "one" input variable

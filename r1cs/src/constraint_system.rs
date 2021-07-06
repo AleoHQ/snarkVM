@@ -27,6 +27,24 @@ pub trait ConstraintSynthesizer<F: Field> {
     fn generate_constraints<CS: ConstraintSystem<F>>(&self, cs: &mut CS) -> Result<(), SynthesisError>;
 }
 
+/// Defines the parameter to optimize for a `ConstraintSystem`.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub enum OptimizationGoal {
+    /// Make no attempt to optimize.
+    None,
+    /// Minimize the number of constraints.
+    Constraints,
+    /// Minimize the total weight of the constraints (the number of nonzero
+    /// entries across all constraints).
+    Weight,
+}
+
+impl Default for OptimizationGoal {
+    fn default() -> Self {
+        Self::Constraints
+    }
+}
+
 /// Represents a constraint system which can have new variables
 /// allocated and constrains between them formed.
 pub trait ConstraintSystem<F: Field>: Sized {
@@ -102,6 +120,14 @@ pub trait ConstraintSystem<F: Field>: Sized {
 
     /// Output the number of private input variables to the system.
     fn num_private_variables(&self) -> usize;
+
+    /// Check whether this constraint system aims to optimize weight,
+    /// number of constraints, or neither.
+    fn optimization_goal(&self) -> OptimizationGoal;
+
+    /// Specify whether this constraint system should aim to optimize weight,
+    /// number of constraints, or neither.
+    fn set_optimization_goal(&mut self, goal: OptimizationGoal);
 }
 
 /// Convenience implementation of ConstraintSystem<F> for mutable references to
@@ -178,5 +204,15 @@ impl<F: Field, CS: ConstraintSystem<F>> ConstraintSystem<F> for &mut CS {
     #[inline]
     fn num_private_variables(&self) -> usize {
         (**self).num_private_variables()
+    }
+
+    #[inline]
+    fn optimization_goal(&self) -> OptimizationGoal {
+        (**self).optimization_goal()
+    }
+
+    #[inline]
+    fn set_optimization_goal(&mut self, goal: OptimizationGoal) {
+        (**self).set_optimization_goal(goal)
     }
 }

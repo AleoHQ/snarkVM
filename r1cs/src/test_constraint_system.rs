@@ -17,6 +17,7 @@
 use crate::{errors::SynthesisError, ConstraintSystem, Index, LinearCombination, OptionalVec, Variable};
 use snarkvm_fields::Field;
 
+use crate::constraint_system::OptimizationGoal;
 use cfg_if::cfg_if;
 use fxhash::{FxBuildHasher, FxHashMap};
 use indexmap::{map::Entry, IndexMap, IndexSet};
@@ -97,6 +98,9 @@ pub struct TestConstraintSystem<F: Field> {
     public_variables: OptionalVec<InternedField>,
     // the list of currently applicable auxiliary variables
     private_variables: OptionalVec<InternedField>,
+    // The parameter we aim to minimize in this constraint system (either the
+    // number of constraints or their total weight).
+    optimization_goal: OptimizationGoal,
 }
 
 impl<F: Field> Default for TestConstraintSystem<F> {
@@ -138,6 +142,7 @@ impl<F: Field> Default for TestConstraintSystem<F> {
             constraints,
             public_variables: inputs,
             private_variables: Default::default(),
+            optimization_goal: OptimizationGoal::Constraints,
         }
     }
 }
@@ -475,5 +480,20 @@ impl<F: Field> ConstraintSystem<F> for TestConstraintSystem<F> {
     #[inline]
     fn num_private_variables(&self) -> usize {
         self.private_variables.len()
+    }
+
+    #[inline]
+    fn optimization_goal(&self) -> OptimizationGoal {
+        self.optimization_goal.clone()
+    }
+
+    #[inline]
+    fn set_optimization_goal(&mut self, goal: OptimizationGoal) {
+        // `set_optimization_type` should only be executed before any constraint or value is created.
+        assert_eq!(self.num_public_variables(), 1);
+        assert_eq!(self.num_private_variables(), 0);
+        assert_eq!(self.num_constraints(), 0);
+
+        self.optimization_goal = goal;
     }
 }

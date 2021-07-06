@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with the snarkVM library. If not, see <https://www.gnu.org/licenses/>.
 
-use crate::{errors::SynthesisError, ConstraintSystem, Index, LinearCombination, Variable};
+use crate::{errors::SynthesisError, ConstraintSystem, Index, LinearCombination, OptimizationGoal, Variable};
 use snarkvm_fields::Field;
 
 /// Constraint counter for testing purposes.
@@ -23,6 +23,7 @@ pub struct ConstraintCounter {
     pub num_public_variables: usize,
     pub num_private_variables: usize,
     pub num_constraints: usize,
+    pub optimization_goal: OptimizationGoal,
 }
 
 impl<ConstraintF: Field> ConstraintSystem<ConstraintF> for ConstraintCounter {
@@ -85,5 +86,20 @@ impl<ConstraintF: Field> ConstraintSystem<ConstraintF> for ConstraintCounter {
 
     fn num_private_variables(&self) -> usize {
         self.num_private_variables
+    }
+
+    #[inline]
+    fn optimization_goal(&self) -> OptimizationGoal {
+        self.optimization_goal.clone()
+    }
+
+    #[inline]
+    fn set_optimization_goal(&mut self, goal: OptimizationGoal) {
+        // `set_optimization_type` should only be executed before any constraint or value is created.
+        assert_eq!(self.num_public_variables, 1);
+        assert_eq!(self.num_private_variables, 0);
+        assert_eq!(self.num_constraints, 0);
+
+        self.optimization_goal = goal;
     }
 }

@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with the snarkVM library. If not, see <https://www.gnu.org/licenses/>.
 
-use crate::{errors::SynthesisError, ConstraintSystem, LinearCombination, Variable};
+use crate::{errors::SynthesisError, ConstraintSystem, LinearCombination, OptimizationGoal, Variable};
 use snarkvm_fields::Field;
 
 use std::marker::PhantomData;
@@ -99,6 +99,14 @@ impl<F: Field, CS: ConstraintSystem<F>> ConstraintSystem<F> for Namespace<'_, F,
     #[inline]
     fn num_private_variables(&self) -> usize {
         self.0.num_private_variables()
+    }
+
+    fn optimization_goal(&self) -> OptimizationGoal {
+        self.0.optimization_goal()
+    }
+
+    fn set_optimization_goal(&mut self, goal: OptimizationGoal) {
+        self.0.set_optimization_goal(goal);
     }
 }
 

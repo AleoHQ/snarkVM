@@ -16,9 +16,14 @@
 
 use crate::ahp::matrices::{make_matrices_square, padded_matrix_dim, to_matrix_helper};
 use snarkvm_fields::Field;
-use snarkvm_r1cs::errors::SynthesisError;
-
-use snarkvm_r1cs::{ConstraintSystem, Index as VarIndex, LinearCombination, Variable};
+use snarkvm_r1cs::{
+    errors::SynthesisError,
+    ConstraintSystem,
+    Index as VarIndex,
+    LinearCombination,
+    OptimizationGoal,
+    Variable,
+};
 use snarkvm_utilities::serialize::*;
 
 /// Stores constraints during index generation.
@@ -29,6 +34,7 @@ pub(crate) struct IndexerConstraintSystem<F: Field> {
     pub(crate) num_public_variables: usize,
     pub(crate) num_private_variables: usize,
     pub(crate) num_constraints: usize,
+    pub(crate) optimization_goal: OptimizationGoal,
 }
 
 impl<F: Field> IndexerConstraintSystem<F> {
@@ -41,6 +47,7 @@ impl<F: Field> IndexerConstraintSystem<F> {
             num_public_variables: 1,
             num_private_variables: 0,
             num_constraints: 0,
+            optimization_goal: OptimizationGoal::Constraints,
         }
     }
 
@@ -176,5 +183,18 @@ impl<F: Field> ConstraintSystem<F> for IndexerConstraintSystem<F> {
 
     fn num_private_variables(&self) -> usize {
         self.num_private_variables
+    }
+
+    fn optimization_goal(&self) -> OptimizationGoal {
+        self.optimization_goal.clone()
+    }
+
+    fn set_optimization_goal(&mut self, goal: OptimizationGoal) {
+        // `set_optimization_type` should only be executed before any constraint or value is created.
+        assert_eq!(self.num_public_variables, 1);
+        assert_eq!(self.num_private_variables, 0);
+        assert_eq!(self.num_constraints, 0);
+
+        self.optimization_goal = goal;
     }
 }

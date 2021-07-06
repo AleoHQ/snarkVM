@@ -19,8 +19,16 @@ use crate::{cfg_into_iter, cfg_iter, fft::EvaluationDomain, msm::FixedBaseMSM};
 use snarkvm_curves::traits::{PairingEngine, ProjectiveCurve};
 use snarkvm_fields::{Field, One, PrimeField, Zero};
 use snarkvm_profiler::{end_timer, start_timer};
-use snarkvm_r1cs::{ConstraintSynthesizer, ConstraintSystem, Index, LinearCombination, SynthesisError, Variable};
-use snarkvm_utilities::{errors::SerializationError, rand::UniformRand, serialize::*};
+use snarkvm_r1cs::{
+    ConstraintSynthesizer,
+    ConstraintSystem,
+    Index,
+    LinearCombination,
+    OptimizationGoal,
+    SynthesisError,
+    Variable,
+};
+use snarkvm_utilities::rand::UniformRand;
 
 use core::ops::Mul;
 use rand::Rng;
@@ -45,13 +53,14 @@ where
 
 /// This is our assembly structure that we'll use to synthesize the
 /// circuit into a QAP.
-#[derive(Clone, Debug, CanonicalSerialize, CanonicalDeserialize)]
+#[derive(Clone, Debug)]
 pub struct KeypairAssembly<E: PairingEngine> {
     pub num_public_variables: usize,
     pub num_private_variables: usize,
     pub at: Vec<Vec<(E::Fr, Index)>>,
     pub bt: Vec<Vec<(E::Fr, Index)>>,
     pub ct: Vec<Vec<(E::Fr, Index)>>,
+    pub optimization_goal: OptimizationGoal,
 }
 
 impl<E: PairingEngine> ConstraintSystem<E::Fr> for KeypairAssembly<E> {
@@ -130,6 +139,19 @@ impl<E: PairingEngine> ConstraintSystem<E::Fr> for KeypairAssembly<E> {
     fn num_private_variables(&self) -> usize {
         self.num_private_variables
     }
+
+    fn optimization_goal(&self) -> OptimizationGoal {
+        self.optimization_goal.clone()
+    }
+
+    fn set_optimization_goal(&mut self, goal: OptimizationGoal) {
+        // `set_optimization_type` should only be executed before any constraint or value is created.
+        assert_eq!(self.num_public_variables(), 0);
+        assert_eq!(self.num_private_variables(), 0);
+        assert_eq!(self.num_constraints(), 0);
+
+        self.optimization_goal = goal;
+    }
 }
 
 /// Create parameters for a circuit, given some toxic waste.
@@ -153,6 +175,7 @@ where
         at: vec![],
         bt: vec![],
         ct: vec![],
+        optimization_goal: OptimizationGoal::Constraints,
     };
 
     // Allocate the "one" input variable
