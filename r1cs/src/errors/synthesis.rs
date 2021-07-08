@@ -26,6 +26,8 @@ pub enum SynthesisError {
     AssignmentMissing,
     /// During synthesis, we divided by zero.
     DivisionByZero,
+    /// During synthesis, we overflowed an integer.
+    Overflow,
     /// During synthesis, we constructed an unsatisfiable constraint system.
     Unsatisfiable,
     /// During synthesis, our polynomials ended up being too high of degree
@@ -51,6 +53,7 @@ impl Error for SynthesisError {
         match *self {
             SynthesisError::AssignmentMissing => "an assignment for a variable could not be computed",
             SynthesisError::DivisionByZero => "division by zero",
+            SynthesisError::Overflow => "integer overflow",
             SynthesisError::Unsatisfiable => "unsatisfiable constraint system",
             SynthesisError::PolynomialDegreeTooLarge => "polynomial degree is too large",
             SynthesisError::UnexpectedIdentity => "encountered an identity element in the CRS",

@@ -1,0 +1,63 @@
+[package]
+name = "snarkvm-eval"
+version = "0.6.0"
+authors = [ "The Aleo Team <hello@aleo.org>" ]
+description = "IR for a decentralized virtual machine"
+homepage = "https://aleo.org"
+repository = "https://github.com/AleoHQ/snarkVM"
+keywords = [
+  "aleo",
+  "cryptography",
+  "blockchain",
+  "decentralized",
+  "zero-knowledge"
+]
+categories = [ "cryptography::cryptocurrencies", "operating-systems" ]
+include = [ "Cargo.toml", "src", "README.md", "LICENSE.md" ]
+license = "GPL-3.0"
+edition = "2018"
+
+[features]
+
+[dependencies.tracing]
+version = "0.1"
+
+[dependencies.anyhow]
+version = "1.0"
+
+[dependencies.snarkvm-ir]
+version = "0.6.0"
+path = "../ir"
+
+[dependencies.snarkvm-fields]
+version = "0.6.0"
+path = "../fields"
+
+[dependencies.snarkvm-gadgets]
+version = "0.6.0"
+path = "../gadgets"
+
+[dependencies.snarkvm-r1cs]
+version = "0.6.0"
+path = "../r1cs"
+
+[dependencies.snarkvm-curves]
+version = "0.6.0"
+path = "../curves"
+
+[dependencies.snarkvm-utilities]
+version = "0.6.0"
+path = "../utilities"
+
+[dependencies.snarkvm-dpc]
+version = "0.6.0"
+path = "../dpc"
+
+[dependencies.thiserror]
+version = "1.0"
+
+[dependencies.indexmap]
+version = "1.6"
+
+[dependencies.im]
+version = "15.0"

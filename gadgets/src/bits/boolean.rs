@@ -395,6 +395,13 @@ impl Boolean {
         }
     }
 
+    pub fn is_allocated(&self) -> bool {
+        match self {
+            Boolean::Constant(_) => false,
+            _ => true,
+        }
+    }
+
     pub fn lc<F: Field>(&self, one: Variable, coeff: F) -> LinearCombination<F> {
         match *self {
             Boolean::Constant(c) => {

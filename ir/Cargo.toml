@@ -1,0 +1,38 @@
+[package]
+name = "snarkvm-ir"
+version = "0.6.0"
+authors = [ "The Aleo Team <hello@aleo.org>" ]
+description = "IR for a decentralized virtual machine"
+homepage = "https://aleo.org"
+repository = "https://github.com/AleoHQ/snarkVM"
+keywords = [
+  "aleo",
+  "cryptography",
+  "blockchain",
+  "decentralized",
+  "zero-knowledge"
+]
+categories = [ "cryptography::cryptocurrencies", "operating-systems" ]
+include = [ "Cargo.toml", "src", "README.md", "LICENSE.md" ]
+license = "GPL-3.0"
+edition = "2018"
+
+[features]
+
+[dependencies.prost]
+version = "0.7"
+
+[dependencies.anyhow]
+version = "1.0"
+
+[dependencies.num_enum]
+version = "0.5"
+
+[dependencies.bech32]
+version = "0.8"
+
+[dependencies.indexmap]
+version = "1.6"
+
+[build-dependencies.prost-build]
+version = "0.7"

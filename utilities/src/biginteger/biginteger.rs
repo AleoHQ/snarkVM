@@ -125,6 +125,9 @@ pub trait BigInteger:
         *self = Self::read(reader)?;
         Ok(())
     }
+
+    /// Creates a BigInteger by copying `input`. Will truncate or expand as needed.
+    fn from_slice(input: &[u64]) -> Self;
 }
 
 pub mod arithmetic {
