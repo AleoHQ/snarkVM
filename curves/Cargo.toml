@@ -58,7 +58,7 @@ version = "0.3"
 version = "0.8"
 
 [build-dependencies]
-rustc_version = "0.3"
+rustc_version = "0.4"
 
 [features]
 default = [ "snarkvm-fields/default", "snarkvm-utilities/default" ]
