@@ -120,7 +120,7 @@ default-features = false
 version = "1.6"
 
 [dependencies.cuda-oxide]
-version = "0.3"
+version = "0.4"
 optional = true
 
 [dependencies.lazy_static]
