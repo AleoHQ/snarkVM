@@ -16,7 +16,7 @@
 
 use std::{borrow::Borrow, marker::PhantomData};
 
-use snarkvm_algorithms::snark::gm17::{Proof, VerifyingKey, GM17};
+use snarkvm_algorithms::snark::gm17::{PreparedVerifyingKey, Proof, VerifyingKey, GM17};
 use snarkvm_curves::traits::{AffineCurve, PairingEngine};
 use snarkvm_fields::{Field, ToConstraintField};
 use snarkvm_r1cs::{errors::SynthesisError, ConstraintSynthesizer, ConstraintSystem};
@@ -32,7 +32,9 @@ use crate::{
         eq::EqGadget,
         fields::FieldGadget,
     },
+    PrepareToGadget,
 };
+use snarkvm_curves::PairingCurve;
 
 #[derive(Derivative)]
 #[derivative(Clone(bound = "P::G1Gadget: Clone, P::G2Gadget: Clone"))]
@@ -54,8 +56,10 @@ pub struct GM17VerifyingKeyGadget<Pairing: PairingEngine, F: Field, P: PairingGa
     pub query: Vec<P::G1Gadget>,
 }
 
-impl<Pairing: PairingEngine, F: Field, P: PairingGadget<Pairing, F>> GM17VerifyingKeyGadget<Pairing, F, P> {
-    pub fn prepare<CS: ConstraintSystem<F>>(
+impl<Pairing: PairingEngine, F: Field, P: PairingGadget<Pairing, F>>
+    PrepareToGadget<GM17PreparedVerifyingKeyGadget<Pairing, F, P>, F> for GM17VerifyingKeyGadget<Pairing, F, P>
+{
+    fn prepare<CS: ConstraintSystem<F>>(
         &self,
         mut cs: CS,
     ) -> Result<GM17PreparedVerifyingKeyGadget<Pairing, F, P>, SynthesisError> {
@@ -92,6 +96,93 @@ pub struct GM17PreparedVerifyingKeyGadget<Pairing: PairingEngine, F: Field, P: P
     pub query: Vec<P::G1Gadget>,
 }
 
+impl<Pairing: PairingEngine, F: Field, P: PairingGadget<Pairing, F>> AllocGadget<PreparedVerifyingKey<Pairing>, F>
+    for GM17PreparedVerifyingKeyGadget<Pairing, F, P>
+{
+    #[inline]
+    fn alloc<
+        Fn: FnOnce() -> Result<T, SynthesisError>,
+        T: Borrow<PreparedVerifyingKey<Pairing>>,
+        CS: ConstraintSystem<F>,
+    >(
+        mut cs: CS,
+        value_gen: Fn,
+    ) -> Result<Self, SynthesisError> {
+        value_gen().and_then(|pvk| {
+            let pvk = pvk.borrow().clone();
+
+            let g_alpha = P::G1Gadget::alloc(&mut cs.ns(|| "g_alpha"), || Ok(pvk.g_alpha.into_projective()))?;
+            let h_beta = P::G2Gadget::alloc(&mut cs.ns(|| "h_beta"), || Ok(pvk.h_beta.into_projective()))?;
+            let g_alpha_pc = P::G1PreparedGadget::alloc(&mut cs.ns(|| "g_alpha_pc"), || Ok(pvk.g_alpha.prepare()))?;
+            let h_beta_pc = P::G2PreparedGadget::alloc(&mut cs.ns(|| "h_beta_pc"), || Ok(pvk.h_beta.prepare()))?;
+            let g_gamma_pc = P::G1PreparedGadget::alloc(&mut cs.ns(|| "g_gamma_pc"), || Ok(pvk.g_gamma_pc.clone()))?;
+            let h_gamma_pc = P::G2PreparedGadget::alloc(&mut cs.ns(|| "h_gamma_pc"), || Ok(pvk.h_gamma_pc.clone()))?;
+            let h_pc = P::G2PreparedGadget::alloc(&mut cs.ns(|| "h_pc"), || Ok(pvk.h_pc.clone()))?;
+
+            let mut query = Vec::new();
+            for (i, elem) in pvk.vk.query.iter().cloned().enumerate() {
+                query.push(P::G1Gadget::alloc(&mut cs.ns(|| format!("query {}", i)), || {
+                    Ok(elem.into_projective())
+                })?);
+            }
+
+            Ok(Self {
+                g_alpha,
+                h_beta,
+                g_alpha_pc,
+                h_beta_pc,
+                g_gamma_pc,
+                h_gamma_pc,
+                h_pc,
+                query,
+            })
+        })
+    }
+
+    #[inline]
+    fn alloc_input<
+        Fn: FnOnce() -> Result<T, SynthesisError>,
+        T: Borrow<PreparedVerifyingKey<Pairing>>,
+        CS: ConstraintSystem<F>,
+    >(
+        mut cs: CS,
+        value_gen: Fn,
+    ) -> Result<Self, SynthesisError> {
+        value_gen().and_then(|pvk| {
+            let pvk = pvk.borrow().clone();
+
+            let g_alpha = P::G1Gadget::alloc_input(&mut cs.ns(|| "g_alpha"), || Ok(pvk.g_alpha.into_projective()))?;
+            let h_beta = P::G2Gadget::alloc_input(&mut cs.ns(|| "h_beta"), || Ok(pvk.h_beta.into_projective()))?;
+            let g_alpha_pc =
+                P::G1PreparedGadget::alloc_input(&mut cs.ns(|| "g_alpha_pc"), || Ok(pvk.g_alpha.prepare()))?;
+            let h_beta_pc = P::G2PreparedGadget::alloc_input(&mut cs.ns(|| "h_beta_pc"), || Ok(pvk.h_beta.prepare()))?;
+            let g_gamma_pc =
+                P::G1PreparedGadget::alloc_input(&mut cs.ns(|| "g_gamma_pc"), || Ok(pvk.g_gamma_pc.clone()))?;
+            let h_gamma_pc =
+                P::G2PreparedGadget::alloc_input(&mut cs.ns(|| "h_gamma_pc"), || Ok(pvk.h_gamma_pc.clone()))?;
+            let h_pc = P::G2PreparedGadget::alloc_input(&mut cs.ns(|| "h_pc"), || Ok(pvk.h_pc.clone()))?;
+
+            let mut query = Vec::new();
+            for (i, elem) in pvk.vk.query.iter().cloned().enumerate() {
+                query.push(P::G1Gadget::alloc_input(&mut cs.ns(|| format!("query {}", i)), || {
+                    Ok(elem.into_projective())
+                })?);
+            }
+
+            Ok(GM17PreparedVerifyingKeyGadget {
+                g_alpha,
+                h_beta,
+                g_alpha_pc,
+                h_beta_pc,
+                g_gamma_pc,
+                h_gamma_pc,
+                h_pc,
+                query,
+            })
+        })
+    }
+}
+
 pub struct GM17VerifierGadget<Pairing: PairingEngine, F: Field, P: PairingGadget<Pairing, F>> {
     _pairing_engine: PhantomData<Pairing>,
     _engine: PhantomData<F>,
@@ -116,7 +207,8 @@ impl<
         mut public_inputs: I,
         proof: &Self::ProofGadget,
     ) -> Result<(), SynthesisError> {
-        let pvk = vk.prepare(&mut cs.ns(|| "Prepare vk"))?;
+        let pvk = vk.prepare(&mut cs.ns(|| "prepare vk"))?;
+
         // e(A*G^{alpha}, B*H^{beta}) = e(G^{alpha}, H^{beta}) * e(G^{psi}, H^{gamma}) *
         // e(C, H) where psi = \sum_{i=0}^l input_i pvk.query[i]
 

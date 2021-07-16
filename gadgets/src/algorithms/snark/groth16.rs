@@ -16,7 +16,7 @@
 
 use std::{borrow::Borrow, marker::PhantomData};
 
-use snarkvm_algorithms::snark::groth16::{Groth16, Proof, VerifyingKey};
+use snarkvm_algorithms::snark::groth16::{Groth16, PreparedVerifyingKey, Proof, VerifyingKey};
 use snarkvm_curves::traits::{AffineCurve, PairingEngine};
 use snarkvm_fields::{Field, ToConstraintField};
 use snarkvm_r1cs::{errors::SynthesisError, ConstraintSynthesizer, ConstraintSystem};
@@ -31,6 +31,7 @@ use crate::{
         curves::{GroupGadget, PairingGadget},
         eq::EqGadget,
     },
+    PrepareToGadget,
 };
 
 #[derive(Derivative)]
@@ -53,9 +54,10 @@ pub struct VerifyingKeyGadget<PairingE: PairingEngine, ConstraintF: Field, P: Pa
 }
 
 impl<PairingE: PairingEngine, ConstraintF: Field, P: PairingGadget<PairingE, ConstraintF>>
-    VerifyingKeyGadget<PairingE, ConstraintF, P>
+    PrepareToGadget<PreparedVerifyingKeyGadget<PairingE, ConstraintF, P>, ConstraintF>
+    for VerifyingKeyGadget<PairingE, ConstraintF, P>
 {
-    pub fn prepare<CS: ConstraintSystem<ConstraintF>>(
+    fn prepare<CS: ConstraintSystem<ConstraintF>>(
         &self,
         mut cs: CS,
     ) -> Result<PreparedVerifyingKeyGadget<PairingE, ConstraintF, P>, SynthesisError> {
@@ -99,6 +101,84 @@ pub struct PreparedVerifyingKeyGadget<
     pub gamma_abc_g1: Vec<P::G1Gadget>,
 }
 
+impl<PairingE, ConstraintF, P> AllocGadget<PreparedVerifyingKey<PairingE>, ConstraintF>
+    for PreparedVerifyingKeyGadget<PairingE, ConstraintF, P>
+where
+    PairingE: PairingEngine,
+    ConstraintF: Field,
+    P: PairingGadget<PairingE, ConstraintF>,
+{
+    fn alloc<
+        Fn: FnOnce() -> Result<T, SynthesisError>,
+        T: Borrow<PreparedVerifyingKey<PairingE>>,
+        CS: ConstraintSystem<ConstraintF>,
+    >(
+        mut cs: CS,
+        value_gen: Fn,
+    ) -> Result<Self, SynthesisError> {
+        value_gen().and_then(|pvk| {
+            let pvk = pvk.borrow().clone();
+
+            let alpha_g1_beta_g2 =
+                P::GTGadget::alloc(&mut cs.ns(|| "alpha_g1_beta_g2"), || Ok(pvk.alpha_g1_beta_g2.clone()))?;
+            let gamma_g2_neg_pc =
+                P::G2PreparedGadget::alloc(&mut cs.ns(|| "gamma_g2_neg_pc"), || Ok(pvk.gamma_g2_neg_pc.clone()))?;
+            let delta_g2_neg_pc =
+                P::G2PreparedGadget::alloc(&mut cs.ns(|| "delta_g2_neg_pc"), || Ok(pvk.delta_g2_neg_pc.clone()))?;
+
+            let mut gamma_abc_g1 = Vec::new();
+            for (i, elem) in pvk.vk.gamma_abc_g1.iter().enumerate() {
+                gamma_abc_g1.push(P::G1Gadget::alloc(
+                    &mut cs.ns(|| format!("gamma_abc_g1 {}", i)),
+                    || Ok(elem.into_projective()),
+                )?);
+            }
+
+            Ok(Self {
+                alpha_g1_beta_g2,
+                gamma_g2_neg_pc,
+                delta_g2_neg_pc,
+                gamma_abc_g1,
+            })
+        })
+    }
+
+    fn alloc_input<
+        Fn: FnOnce() -> Result<T, SynthesisError>,
+        T: Borrow<PreparedVerifyingKey<PairingE>>,
+        CS: ConstraintSystem<ConstraintF>,
+    >(
+        mut cs: CS,
+        value_gen: Fn,
+    ) -> Result<Self, SynthesisError> {
+        value_gen().and_then(|pvk| {
+            let pvk = pvk.borrow().clone();
+
+            let alpha_g1_beta_g2 =
+                P::GTGadget::alloc_input(&mut cs.ns(|| "alpha_g1_beta_g2"), || Ok(pvk.alpha_g1_beta_g2.clone()))?;
+            let gamma_g2_neg_pc =
+                P::G2PreparedGadget::alloc_input(&mut cs.ns(|| "gamma_g2_neg_pc"), || Ok(pvk.gamma_g2_neg_pc.clone()))?;
+            let delta_g2_neg_pc =
+                P::G2PreparedGadget::alloc_input(&mut cs.ns(|| "delta_g2_neg_pc"), || Ok(pvk.delta_g2_neg_pc.clone()))?;
+
+            let mut gamma_abc_g1 = Vec::new();
+            for (i, elem) in pvk.vk.gamma_abc_g1.iter().enumerate() {
+                gamma_abc_g1.push(P::G1Gadget::alloc_input(
+                    &mut cs.ns(|| format!("gamma_abc_g1 {}", i)),
+                    || Ok(elem.into_projective()),
+                )?);
+            }
+
+            Ok(Self {
+                alpha_g1_beta_g2,
+                gamma_g2_neg_pc,
+                delta_g2_neg_pc,
+                gamma_abc_g1,
+            })
+        })
+    }
+}
+
 pub struct Groth16VerifierGadget<PairingE, ConstraintF, P>
 where
     PairingE: PairingEngine,
@@ -129,14 +209,12 @@ where
         mut public_inputs: I,
         proof: &Self::ProofGadget,
     ) -> Result<(), SynthesisError> {
-        let pvk = vk.prepare(&mut cs.ns(|| "Prepare vk"))?;
-
         let PreparedVerifyingKeyGadget {
             alpha_g1_beta_g2,
             gamma_g2_neg_pc,
             delta_g2_neg_pc,
             mut gamma_abc_g1,
-        } = pvk;
+        } = vk.prepare(&mut cs.ns(|| "prepare vk"))?;
 
         let mut gamma_abc_g1_iter = gamma_abc_g1.iter_mut();
 

@@ -28,7 +28,10 @@ use crate::{
 pub trait PairingGadget<Pairing: PairingEngine, F: Field> {
     type G1Gadget: GroupGadget<Pairing::G1Projective, F>;
     type G2Gadget: GroupGadget<Pairing::G2Projective, F>;
-    type G1PreparedGadget: ToBytesGadget<F> + Clone + Debug;
+    type G1PreparedGadget: ToBytesGadget<F>
+        + AllocGadget<<Pairing::G1Affine as PairingCurve>::Prepared, F>
+        + Clone
+        + Debug;
     type G2PreparedGadget: ToBytesGadget<F>
         + AllocGadget<<Pairing::G2Affine as PairingCurve>::Prepared, F>
         + Clone

@@ -19,6 +19,7 @@ use std::fmt::Debug;
 use snarkvm_curves::{
     templates::bls12::{Bls12Parameters, G1Prepared},
     traits::ProjectiveCurve,
+    AffineCurve,
 };
 use snarkvm_r1cs::{errors::SynthesisError, ConstraintSystem};
 
@@ -31,7 +32,9 @@ use crate::{
         curves::GroupGadget,
         eq::{ConditionalEqGadget, EqGadget},
     },
+    AllocGadget,
 };
+use std::borrow::Borrow;
 
 pub type G1Gadget<P> = AffineGadget<
     <P as Bls12Parameters>::G1Parameters,
@@ -83,5 +86,39 @@ impl<P: Bls12Parameters> ConditionalEqGadget<<P as Bls12Parameters>::Fp> for G1P
 
     fn cost() -> usize {
         2 * <FpGadget<<P as Bls12Parameters>::Fp> as ConditionalEqGadget<<P as Bls12Parameters>::Fp>>::cost()
+    }
+}
+
+impl<P: Bls12Parameters> AllocGadget<G1Prepared<P>, <P as Bls12Parameters>::Fp> for G1PreparedGadget<P> {
+    fn alloc<
+        Fn: FnOnce() -> Result<T, SynthesisError>,
+        T: Borrow<G1Prepared<P>>,
+        CS: ConstraintSystem<<P as Bls12Parameters>::Fp>,
+    >(
+        cs: CS,
+        value_gen: Fn,
+    ) -> Result<Self, SynthesisError> {
+        value_gen().and_then(|elem| {
+            let elem = elem.borrow();
+            Ok(Self {
+                0: G1Gadget::<P>::alloc(cs, || Ok(elem.0.into_projective()))?,
+            })
+        })
+    }
+
+    fn alloc_input<
+        Fn: FnOnce() -> Result<T, SynthesisError>,
+        T: Borrow<G1Prepared<P>>,
+        CS: ConstraintSystem<<P as Bls12Parameters>::Fp>,
+    >(
+        cs: CS,
+        value_gen: Fn,
+    ) -> Result<Self, SynthesisError> {
+        value_gen().and_then(|elem| {
+            let elem = elem.borrow();
+            Ok(Self {
+                0: G1Gadget::<P>::alloc_input(cs, || Ok(elem.0.into_projective()))?,
+            })
+        })
     }
 }

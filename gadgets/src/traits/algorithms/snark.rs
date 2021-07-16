@@ -26,6 +26,34 @@ use crate::{
     FromFieldElementsGadget,
 };
 
+pub enum RandProvider<F: Field> {
+    PowerSeries(F),
+}
+
+impl<F: Field> RandProvider<F> {
+    pub fn output_random_elements(&self, num: usize) -> Vec<F> {
+        let mut res = Vec::new();
+
+        match self {
+            RandProvider::PowerSeries(challenge) => {
+                let mut cur = F::one();
+                res.push(cur);
+
+                for _ in 1..num {
+                    cur *= challenge;
+                    res.push(cur)
+                }
+            }
+        }
+
+        res
+    }
+}
+
+pub trait PrepareToGadget<T, F: Field>: Sized {
+    fn prepare<CS: ConstraintSystem<F>>(&self, cs: CS) -> Result<T, SynthesisError>;
+}
+
 pub trait SNARKVerifierGadget<N: SNARK, F: Field> {
     type VerificationKeyGadget: AllocGadget<N::VerifyingKey, F> + AllocBytesGadget<Vec<u8>, F> + ToBytesGadget<F>;
     type ProofGadget: AllocGadget<N::Proof, F> + AllocBytesGadget<Vec<u8>, F>;
