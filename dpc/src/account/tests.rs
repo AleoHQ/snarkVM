@@ -16,7 +16,7 @@
 
 use crate::{
     account::{Account, Address, PrivateKey, ViewKey},
-    testnet1::instantiated::Components,
+    testnet2::instantiated::Components,
     traits::AccountScheme,
 };
 
@@ -59,4 +59,35 @@ pub fn test_address_from_str() {
     let address = Address::<Components>::from_str(address_string);
     assert!(address.is_ok());
     assert_eq!(address_string, address.unwrap().to_string());
+}
+
+#[test]
+pub fn test_account_encryption_and_signature_compatibility() {
+    let rng = &mut thread_rng();
+    let message = "Hi, I am a Schnorr signature!".as_bytes();
+
+    let account = Account::<Components>::new(rng).unwrap();
+    let view_key = ViewKey::<Components>::from_private_key(&account.private_key).unwrap();
+
+    let signature = view_key.sign(message, rng).unwrap();
+
+    let verification = account.address.verify_signature(message, &signature).unwrap();
+
+    assert!(verification);
+}
+
+#[test]
+pub fn test_failed_account_encryption_and_signature_compatibility() {
+    let rng = &mut thread_rng();
+    let message = "Hi, I am a Schnorr signature!".as_bytes();
+    let bad_message = "Bad Message".as_bytes();
+
+    let account = Account::<Components>::new(rng).unwrap();
+    let view_key = ViewKey::<Components>::from_private_key(&account.private_key).unwrap();
+
+    let signature = view_key.sign(message, rng).unwrap();
+
+    let verification = account.address.verify_signature(bad_message, &signature).unwrap();
+
+    assert!(!verification);
 }
