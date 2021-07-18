@@ -41,6 +41,9 @@ pub use optional_vec::*;
 mod test_constraint_system;
 pub use test_constraint_system::TestConstraintSystem;
 
+mod test_constraint_checker;
+pub use test_constraint_checker::TestConstraintChecker;
+
 mod test_fr;
 pub use test_fr::*;
 

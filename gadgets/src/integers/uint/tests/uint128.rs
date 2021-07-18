@@ -20,7 +20,7 @@ use rand::{Rng, SeedableRng};
 use rand_xorshift::XorShiftRng;
 
 use snarkvm_fields::{One, Zero};
-use snarkvm_r1cs::{ConstraintSystem, Fr, TestConstraintSystem};
+use snarkvm_r1cs::{ConstraintSystem, Fr, TestConstraintChecker, TestConstraintSystem};
 
 use crate::{
     bits::Boolean,
@@ -370,12 +370,11 @@ fn test_uint128_div_constants() {
 }
 
 #[test]
-#[ignore]
 fn test_uint128_div() {
     let mut rng = XorShiftRng::seed_from_u64(1231275789u64);
 
     for _ in 0..10 {
-        let mut cs = TestConstraintSystem::<Fr>::new();
+        let mut cs = TestConstraintChecker::<Fr>::new();
 
         let a: u128 = rng.gen();
         let b: u128 = rng.gen();
@@ -394,18 +393,6 @@ fn test_uint128_div() {
         assert!(cs.is_satisfied());
         assert!(r.value == Some(expected));
         check_all_allocated_bits(expected, r);
-
-        // Flip a bit_gadget and see if the division constraint still works
-        if cs
-            .get("division/r_sub_d_result_0/allocated bit_gadget 0/boolean")
-            .is_zero()
-        {
-            cs.set("division/r_sub_d_result_0/allocated bit_gadget 0/boolean", Fr::one());
-        } else {
-            cs.set("division/r_sub_d_result_0/allocated bit_gadget 0/boolean", Fr::zero());
-        }
-
-        assert!(!cs.is_satisfied());
     }
 }
 
@@ -433,11 +420,10 @@ fn test_uint128_pow_constants() {
 }
 
 #[test]
-#[ignore]
 fn test_uint128_pow() {
     let mut rng = XorShiftRng::seed_from_u64(1231275789u64);
 
-    let mut cs = TestConstraintSystem::<Fr>::new();
+    let mut cs = TestConstraintChecker::<Fr>::new();
 
     let a: u128 = rng.gen_range(0..u128::from(u32::MAX));
     let b: u128 = rng.gen_range(0..4);
@@ -454,22 +440,4 @@ fn test_uint128_pow() {
     assert!(r.value == Some(expected));
 
     check_all_allocated_bits(expected, r);
-
-    // Flip a bit_gadget and see if the exponentiation constraint still works
-    if cs
-        .get("exponentiation/multiply_by_self_0/partial_products/result bit_gadget 0/boolean")
-        .is_zero()
-    {
-        cs.set(
-            "exponentiation/multiply_by_self_0/partial_products/result bit_gadget 0/boolean",
-            Fr::one(),
-        );
-    } else {
-        cs.set(
-            "exponentiation/multiply_by_self_0/partial_products/result bit_gadget 0/boolean",
-            Fr::zero(),
-        );
-    }
-
-    assert!(!cs.is_satisfied());
 }
