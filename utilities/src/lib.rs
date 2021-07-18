@@ -20,17 +20,27 @@
 #[macro_use]
 extern crate std;
 
+#[cfg(not(feature = "std"))]
+pub use alloc::*;
+
+#[cfg(not(feature = "std"))]
+pub use core::*;
+
+#[cfg(feature = "std")]
+#[doc(hidden)]
+pub use std::*;
+
 #[rustfmt::skip]
 #[cfg(not(feature = "std"))]
 #[allow(unused_imports)]
 #[doc(hidden)]
-pub use alloc::{boxed::Box, format, vec, vec::Vec};
+pub use alloc::{boxed::Box, vec::Vec};
 
 #[rustfmt::skip]
 #[cfg(feature = "std")]
 #[allow(unused_imports)]
 #[doc(hidden)]
-pub use std::{boxed::Box, format, vec, vec::Vec};
+pub use std::{boxed::Box, vec::Vec};
 
 #[macro_use]
 extern crate thiserror;
@@ -72,9 +82,6 @@ pub use variable_length_integer::*;
 
 #[cfg(not(feature = "std"))]
 pub mod io;
-
-#[cfg(feature = "std")]
-pub use std::io;
 
 #[cfg(not(feature = "std"))]
 pub fn error(_msg: &'static str) -> io::Error {

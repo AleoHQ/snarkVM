@@ -23,8 +23,5 @@ pub use pedersen::*;
 pub mod pedersen_compressed;
 pub use pedersen_compressed::*;
 
-pub mod pedersen_parameters;
-pub use pedersen_parameters::*;
-
 #[cfg(test)]
 mod tests;

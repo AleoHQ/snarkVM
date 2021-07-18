@@ -15,7 +15,7 @@
 // along with the snarkVM library. If not, see <https://www.gnu.org/licenses/>.
 
 use crate::{
-    testnet2::{encoded::*, encrypted::*, instantiated::*, NoopProgram, Payload, Record, SystemParameters},
+    testnet2::{encoded::*, encrypted::*, instantiated::*, NoopProgram, Payload, Record},
     Account,
     AccountScheme,
     DPCComponents,
@@ -36,42 +36,25 @@ fn test_record_serialization() {
     let mut rng = ChaChaRng::seed_from_u64(1231275789u64);
 
     for _ in 0..ITERATIONS {
-        // Generate parameters for the ledger, commitment schemes, CRH, and the
-        // "always-accept" program.
-        let system_parameters = SystemParameters::<Components>::setup(&mut rng).unwrap();
-        let noop_program = NoopProgram::<Components>::setup(
-            &system_parameters.local_data_commitment,
-            &system_parameters.program_verification_key_crh,
-            &mut rng,
-        )
-        .unwrap();
+        let noop_program = NoopProgram::<Components>::setup(&mut rng).unwrap();
 
         for _ in 0..ITERATIONS {
-            let dummy_account = Account::<Components>::new(
-                &system_parameters.account_signature,
-                &system_parameters.account_commitment,
-                &system_parameters.account_encryption,
-                &mut rng,
-            )
-            .unwrap();
+            let dummy_account = Account::<Components>::new(&mut rng).unwrap();
 
             let sn_nonce_input: [u8; 32] = rng.gen();
             let value = rng.gen();
             let payload: [u8; 32] = rng.gen();
 
             let given_record = Record::new(
-                &system_parameters.record_commitment,
                 dummy_account.address,
                 false,
                 value,
                 Payload::from_bytes(&payload),
                 noop_program.id(),
                 noop_program.id(),
-                <Components as DPCComponents>::SerialNumberNonceCRH::hash(
-                    &system_parameters.serial_number_nonce,
-                    &sn_nonce_input,
-                )
-                .unwrap(),
+                <Components as DPCComponents>::serial_number_nonce_crh()
+                    .hash(&sn_nonce_input)
+                    .unwrap(),
                 &mut rng,
             )
             .unwrap();
@@ -97,57 +80,35 @@ fn test_record_encryption() {
     let mut rng = ChaChaRng::seed_from_u64(1231275789u64);
 
     for _ in 0..ITERATIONS {
-        // Generate parameters for the ledger, commitment schemes, CRH, and the
-        // "always-accept" program.
-        let system_parameters = SystemParameters::<Components>::setup(&mut rng).unwrap();
-        let noop_program = NoopProgram::<Components>::setup(
-            &system_parameters.local_data_commitment,
-            &system_parameters.program_verification_key_crh,
-            &mut rng,
-        )
-        .unwrap();
+        let noop_program = NoopProgram::<Components>::setup(&mut rng).unwrap();
 
         for _ in 0..ITERATIONS {
-            let dummy_account = Account::new(
-                &system_parameters.account_signature,
-                &system_parameters.account_commitment,
-                &system_parameters.account_encryption,
-                &mut rng,
-            )
-            .unwrap();
+            let dummy_account = Account::<Components>::new(&mut rng).unwrap();
 
             let sn_nonce_input: [u8; 32] = rng.gen();
             let value = rng.gen();
             let payload: [u8; 32] = rng.gen();
 
             let given_record = Record::new(
-                &system_parameters.record_commitment,
                 dummy_account.address,
                 false,
                 value,
                 Payload::from_bytes(&payload),
                 noop_program.id(),
                 noop_program.id(),
-                <Components as DPCComponents>::SerialNumberNonceCRH::hash(
-                    &system_parameters.serial_number_nonce,
-                    &sn_nonce_input,
-                )
-                .unwrap(),
+                <Components as DPCComponents>::serial_number_nonce_crh()
+                    .hash(&sn_nonce_input)
+                    .unwrap(),
                 &mut rng,
             )
             .unwrap();
 
             // Encrypt the record
-            let (encryped_record, _) = EncryptedRecord::encrypt(&system_parameters, &given_record, &mut rng).unwrap();
-            let account_view_key = ViewKey::from_private_key(
-                &system_parameters.account_signature,
-                &system_parameters.account_commitment,
-                &dummy_account.private_key,
-            )
-            .unwrap();
+            let (encryped_record, _) = EncryptedRecord::encrypt(&given_record, &mut rng).unwrap();
+            let account_view_key = ViewKey::from_private_key(&dummy_account.private_key).unwrap();
 
             // Decrypt the record
-            let decrypted_record = encryped_record.decrypt(&system_parameters, &account_view_key).unwrap();
+            let decrypted_record = encryped_record.decrypt(&account_view_key).unwrap();
 
             assert_eq!(given_record, decrypted_record);
         }

@@ -20,17 +20,14 @@ pub use bowe_hopwood_pedersen::*;
 pub mod bowe_hopwood_pedersen_compressed;
 pub use bowe_hopwood_pedersen_compressed::*;
 
-pub mod bowe_hopwood_pedersen_parameters;
-pub use bowe_hopwood_pedersen_parameters::*;
-
 pub mod pedersen;
 pub use pedersen::*;
 
 pub mod pedersen_compressed;
 pub use pedersen_compressed::*;
 
-pub mod pedersen_parameters;
-pub use pedersen_parameters::*;
+pub mod poseidon;
+pub use poseidon::*;
 
 pub mod sha256;
 pub use sha256::*;

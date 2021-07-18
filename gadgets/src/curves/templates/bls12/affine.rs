@@ -30,7 +30,7 @@ use crate::{
     integers::uint::UInt8,
     traits::{
         alloc::AllocGadget,
-        curves::GroupGadget,
+        curves::{CurveGadget, GroupGadget},
         eq::{ConditionalEqGadget, EqGadget, NEqGadget},
         fields::{FieldGadget, ToConstraintFieldGadget},
         select::CondSelectGadget,
@@ -360,6 +360,14 @@ where
     F: Field,
     FG: FieldGadget<P::BaseField, F>,
 {
+    fn is_eq<CS: ConstraintSystem<F>>(&self, mut cs: CS, other: &Self) -> Result<Boolean, SynthesisError> {
+        let x = self.x.is_eq(cs.ns(|| "x_is_eq"), &other.x)?;
+        let y = self.y.is_eq(cs.ns(|| "y_is_eq"), &other.y)?;
+        let infinity = self.infinity.is_eq(cs.ns(|| "infinity_is_eq"), &other.infinity)?;
+
+        let x_and_y = Boolean::and(cs.ns(|| "x_and_y"), &x, &y)?;
+        Boolean::and(cs.ns(|| "x_and_y_and_infinity"), &x_and_y, &infinity)
+    }
 }
 
 impl<P, F, FG> ConditionalEqGadget<F> for AffineGadget<P, F, FG>
@@ -415,6 +423,47 @@ where
 impl<P: ShortWeierstrassParameters, F: PrimeField, FG: FieldGadget<P::BaseField, F>> AllocGadget<SWProjective<P>, F>
     for AffineGadget<P, F, FG>
 {
+    #[inline]
+    fn alloc_constant<Fn, T, CS: ConstraintSystem<F>>(mut cs: CS, value_gen: Fn) -> Result<Self, SynthesisError>
+    where
+        Fn: FnOnce() -> Result<T, SynthesisError>,
+        T: Borrow<SWProjective<P>>,
+    {
+        // When allocating the input we assume that the verifier has performed
+        // any on curve checks already.
+        let (x, y, infinity) = match value_gen() {
+            Ok(ge) => {
+                let ge = ge.borrow().into_affine();
+                (Ok(ge.x), Ok(ge.y), Ok(ge.infinity))
+            }
+            _ => (
+                Err(SynthesisError::AssignmentMissing),
+                Err(SynthesisError::AssignmentMissing),
+                Err(SynthesisError::AssignmentMissing),
+            ),
+        };
+
+        // Perform on-curve check.
+        let b = P::COEFF_B;
+        let a = P::COEFF_A;
+
+        let x = FG::alloc_constant(&mut cs.ns(|| "x"), || x)?;
+        let y = FG::alloc_constant(&mut cs.ns(|| "y"), || y)?;
+        let infinity = Boolean::alloc_constant(&mut cs.ns(|| "infinity"), || infinity)?;
+
+        // Check that y^2 = x^3 + ax +b
+        // We do this by checking that y^2 - b = x * (x^2 +a)
+        let x2 = x.square(&mut cs.ns(|| "x^2"))?;
+        let y2 = y.square(&mut cs.ns(|| "y^2"))?;
+
+        let x2_plus_a = x2.add_constant(cs.ns(|| "x^2 + a"), &a)?;
+        let y2_minus_b = y2.add_constant(cs.ns(|| "y^2 - b"), &b.neg())?;
+
+        x2_plus_a.mul_equals(cs.ns(|| "on curve check"), &x, &y2_minus_b)?;
+
+        Ok(Self::new(x, y, infinity))
+    }
+
     #[inline]
     fn alloc<Fn, T, CS: ConstraintSystem<F>>(mut cs: CS, value_gen: Fn) -> Result<Self, SynthesisError>
     where
@@ -532,8 +581,6 @@ impl<P: ShortWeierstrassParameters, F: PrimeField, FG: FieldGadget<P::BaseField,
         Fn: FnOnce() -> Result<T, SynthesisError>,
         T: Borrow<SWProjective<P>>,
     {
-        // When allocating the input we assume that the verifier has performed
-        // any on curve checks already.
         let (x, y, infinity) = match value_gen() {
             Ok(ge) => {
                 let ge = ge.borrow().into_affine();
@@ -546,11 +593,62 @@ impl<P: ShortWeierstrassParameters, F: PrimeField, FG: FieldGadget<P::BaseField,
             ),
         };
 
+        // When allocating the input we **do not** assume that
+        // the verifier has performed any on curve checks already,
+        // since this may not be implemented in the application level,
+        // and can be complicated.
+
+        // Perform on-curve check.
+        let b = P::COEFF_B;
+        let a = P::COEFF_A;
+
         let x = FG::alloc_input(&mut cs.ns(|| "x"), || x)?;
         let y = FG::alloc_input(&mut cs.ns(|| "y"), || y)?;
         let infinity = Boolean::alloc_input(&mut cs.ns(|| "infinity"), || infinity)?;
 
+        // Check that y^2 = x^3 + ax +b
+        // We do this by checking that y^2 - b = x * (x^2 +a)
+        let x2 = x.square(&mut cs.ns(|| "x^2"))?;
+        let y2 = y.square(&mut cs.ns(|| "y^2"))?;
+
+        let x2_plus_a = x2.add_constant(cs.ns(|| "x^2 + a"), &a)?;
+        let y2_minus_b = y2.add_constant(cs.ns(|| "y^2 - b"), &b.neg())?;
+
+        x2_plus_a.mul_equals(cs.ns(|| "on curve check"), &x, &y2_minus_b)?;
+
         Ok(Self::new(x, y, infinity))
+    }
+}
+
+impl<P: ShortWeierstrassParameters, F: PrimeField, FG: FieldGadget<P::BaseField, F>> AllocGadget<SWAffine<P>, F>
+    for AffineGadget<P, F, FG>
+{
+    fn alloc_constant<Fn: FnOnce() -> Result<T, SynthesisError>, T: Borrow<SWAffine<P>>, CS: ConstraintSystem<F>>(
+        cs: CS,
+        f: Fn,
+    ) -> Result<Self, SynthesisError> {
+        Self::alloc_constant(cs, || Ok(f()?.borrow().into_projective()))
+    }
+
+    fn alloc<Fn: FnOnce() -> Result<T, SynthesisError>, T: Borrow<SWAffine<P>>, CS: ConstraintSystem<F>>(
+        cs: CS,
+        f: Fn,
+    ) -> Result<Self, SynthesisError> {
+        Self::alloc(cs, || Ok(f()?.borrow().into_projective()))
+    }
+
+    fn alloc_checked<Fn: FnOnce() -> Result<T, SynthesisError>, T: Borrow<SWAffine<P>>, CS: ConstraintSystem<F>>(
+        cs: CS,
+        f: Fn,
+    ) -> Result<Self, SynthesisError> {
+        Self::alloc_checked(cs, || Ok(f()?.borrow().into_projective()))
+    }
+
+    fn alloc_input<Fn: FnOnce() -> Result<T, SynthesisError>, T: Borrow<SWAffine<P>>, CS: ConstraintSystem<F>>(
+        cs: CS,
+        f: Fn,
+    ) -> Result<Self, SynthesisError> {
+        Self::alloc_input(cs, || Ok(f()?.borrow().into_projective()))
     }
 }
 
@@ -623,4 +721,12 @@ where
 
         Ok(res)
     }
+}
+
+impl<P, F, FG> CurveGadget<SWProjective<P>, F> for AffineGadget<P, F, FG>
+where
+    P: ShortWeierstrassParameters,
+    F: PrimeField,
+    FG: FieldGadget<P::BaseField, F>,
+{
 }

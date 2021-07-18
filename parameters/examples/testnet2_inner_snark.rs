@@ -14,21 +14,12 @@
 // You should have received a copy of the GNU General Public License
 // along with the snarkVM library. If not, see <https://www.gnu.org/licenses/>.
 
-use snarkvm_algorithms::{
-    crh::sha256::sha256,
-    traits::{MerkleParameters, SNARK},
-};
+use snarkvm_algorithms::{crh::sha256::sha256, traits::SNARK};
 use snarkvm_dpc::{
-    errors::DPCError,
-    testnet2::{
-        inner_circuit::InnerCircuit,
-        instantiated::Components,
-        parameters::SystemParameters,
-        Testnet2Components,
-    },
+    testnet2::{inner_circuit::InnerCircuit, instantiated::Components, Testnet2Components},
+    DPCError,
 };
-use snarkvm_parameters::{traits::Parameter, LedgerMerkleTreeParameters};
-use snarkvm_utilities::{FromBytes, ToBytes};
+use snarkvm_utilities::ToBytes;
 
 use rand::thread_rng;
 use std::{path::PathBuf, sync::Arc};
@@ -39,16 +30,10 @@ use utils::store;
 pub fn setup<C: Testnet2Components>() -> Result<(Vec<u8>, Vec<u8>), DPCError> {
     let rng = &mut thread_rng();
 
-    // TODO (howardwu): Resolve this inconsistency on import structure with a new model once MerkleParameters are refactored.
-    let merkle_tree_hash_parameters: <C::MerkleParameters as MerkleParameters>::H =
-        From::from(FromBytes::read_le(&LedgerMerkleTreeParameters::load_bytes()?[..])?);
-    let ledger_merkle_tree_parameters = Arc::new(From::from(merkle_tree_hash_parameters));
+    // TODO (howardwu): TEMPORARY - Resolve this inconsistency on import structure with a new model once MerkleParameters are refactored.
+    let ledger_merkle_tree_parameters = Arc::new(C::ledger_merkle_tree_parameters().clone());
 
-    let system_parameters = SystemParameters::<C>::load()?;
-    let inner_snark_parameters = C::InnerSNARK::setup(
-        &InnerCircuit::blank(&system_parameters, &ledger_merkle_tree_parameters),
-        rng,
-    )?;
+    let inner_snark_parameters = C::InnerSNARK::setup(&InnerCircuit::blank(&ledger_merkle_tree_parameters), rng)?;
     let inner_snark_pk = inner_snark_parameters.0.to_bytes_le()?;
     let inner_snark_vk: <C::InnerSNARK as SNARK>::VerifyingKey = inner_snark_parameters.1.into();
     let inner_snark_vk = inner_snark_vk.to_bytes_le()?;

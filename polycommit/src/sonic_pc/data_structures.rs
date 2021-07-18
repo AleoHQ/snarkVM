@@ -14,16 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with the snarkVM library. If not, see <https://www.gnu.org/licenses/>.
 
-use crate::{
-    impl_bytes,
-    kzg10,
-    BTreeMap,
-    PCCommitterKey,
-    PCPreparedCommitment,
-    PCPreparedVerifierKey,
-    PCVerifierKey,
-    Vec,
-};
+use crate::{impl_bytes, kzg10, BTreeMap, PCCommitterKey, PCVerifierKey, Vec};
+use snarkvm_algorithms::Prepare;
 use snarkvm_curves::{
     traits::{PairingCurve, PairingEngine},
     Group,
@@ -43,17 +35,17 @@ pub type Commitment<E> = kzg10::Commitment<E>;
 /// `PreparedCommitment` is the prepared commitment for the KZG10 scheme.
 pub type PreparedCommitment<E> = kzg10::PreparedCommitment<E>;
 
-impl<E: PairingEngine> PCPreparedCommitment<Commitment<E>> for PreparedCommitment<E> {
+impl<E: PairingEngine> Prepare<PreparedCommitment<E>> for Commitment<E> {
     /// prepare `PreparedCommitment` from `Commitment`
-    fn prepare(comm: &Commitment<E>) -> Self {
+    fn prepare(&self) -> PreparedCommitment<E> {
         let mut prepared_comm = Vec::<E::G1Affine>::new();
-        let mut cur = E::G1Projective::from(comm.0.clone());
+        let mut cur = E::G1Projective::from(self.0.clone());
         for _ in 0..128 {
             prepared_comm.push(cur.clone().into());
             cur.double_in_place();
         }
 
-        Self { 0: prepared_comm }
+        PreparedCommitment::<E> { 0: prepared_comm }
     }
 }
 
@@ -216,10 +208,10 @@ where
 /// Nothing to do to prepare this verifier key (for now).
 pub type PreparedVerifierKey<E> = VerifierKey<E>;
 
-impl<E: PairingEngine> PCPreparedVerifierKey<VerifierKey<E>> for PreparedVerifierKey<E> {
+impl<E: PairingEngine> Prepare<PreparedVerifierKey<E>> for VerifierKey<E> {
     /// prepare `PreparedVerifierKey` from `VerifierKey`
-    fn prepare(vk: &VerifierKey<E>) -> Self {
-        vk.clone()
+    fn prepare(&self) -> Self {
+        (*self).clone()
     }
 }
 

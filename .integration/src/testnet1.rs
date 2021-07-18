@@ -15,26 +15,19 @@
 // along with the snarkVM library. If not, see <https://www.gnu.org/licenses/>.
 
 use crate::Ledger;
-use snarkvm_algorithms::{MerkleParameters, CRH};
-use snarkvm_dpc::{testnet1::instantiated::*, Account, DPCScheme, Storage};
-use snarkvm_parameters::{LedgerMerkleTreeParameters, Parameter};
-use snarkvm_utilities::FromBytes;
+use snarkvm_dpc::{testnet1::instantiated::*, Account, DPCComponents, DPCScheme, Storage};
 
 use rand::{CryptoRng, Rng};
 use std::sync::Arc;
 
-pub type MerkleTreeLedger<S> = Ledger<Testnet1Transaction, CommitmentMerkleParameters, S>;
+pub type MerkleTreeLedger<S> = Ledger<Testnet1Transaction, CommitmentMerkleTreeParameters, S>;
 
 pub fn setup_or_load_parameters<R: Rng + CryptoRng, S: Storage>(
     verify_only: bool,
     rng: &mut R,
-) -> (Arc<CommitmentMerkleParameters>, Testnet1DPC) {
-    // TODO (howardwu): Resolve this inconsistency on import structure with a new model once MerkleParameters are refactored.
-    let crh_parameters =
-        <MerkleTreeCRH as CRH>::Parameters::read_le(&LedgerMerkleTreeParameters::load_bytes().unwrap()[..])
-            .expect("read bytes as hash for MerkleParameters in ledger");
-    let merkle_tree_hash_parameters = <CommitmentMerkleParameters as MerkleParameters>::H::from(crh_parameters);
-    let ledger_merkle_tree_parameters = Arc::new(From::from(merkle_tree_hash_parameters));
+) -> (Arc<CommitmentMerkleTreeParameters>, Testnet1DPC) {
+    // TODO (howardwu): TEMPORARY - Resolve this inconsistency on import structure with a new model once MerkleParameters are refactored.
+    let ledger_merkle_tree_parameters = Arc::new(Components::ledger_merkle_tree_parameters().clone());
 
     let dpc = match <Testnet1DPC as DPCScheme<MerkleTreeLedger<S>>>::load(verify_only) {
         Ok(dpc) => dpc,

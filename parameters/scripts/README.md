@@ -1,11 +1,9 @@
 # Parameter Scripts
 
-To perform a full parameter generation, run:
-```$xslt
-./parameter_setup.sh
-```
+These scripts will run the parameter setup programs in the `examples` folder and move the resulting `.params`
+and `.checksum` files to `testnet*` folder under the `src` directory.
 
-## Subroutines
+If the parameter size has changed, you will need to manually update these in each corresponding struct.
 
 To perform the program SNARK parameter generation only, run:
 ```$xslt

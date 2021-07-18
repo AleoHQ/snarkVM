@@ -14,12 +14,10 @@
 // You should have received a copy of the GNU General Public License
 // along with the snarkVM library. If not, see <https://www.gnu.org/licenses/>.
 
-use crate::marlin::{CircuitProvingKey, CircuitVerifyingKey};
+use crate::marlin::CircuitVerifyingKey;
 
-use snarkvm_algorithms::fft::EvaluationDomain;
 use snarkvm_fields::PrimeField;
-use snarkvm_polycommit::{PCPreparedCommitment, PCPreparedVerifierKey, PolynomialCommitment};
-use snarkvm_r1cs::SynthesisError;
+use snarkvm_polycommit::PolynomialCommitment;
 
 /// Verification key, prepared (preprocessed) for use in pairings.
 pub struct PreparedCircuitVerifyingKey<F: PrimeField, PC: PolynomialCommitment<F>> {
@@ -46,53 +44,5 @@ impl<F: PrimeField, PC: PolynomialCommitment<F>> Clone for PreparedCircuitVerify
             prepared_verifier_key: self.prepared_verifier_key.clone(),
             orig_vk: self.orig_vk.clone(),
         }
-    }
-}
-
-impl<F, PC> PreparedCircuitVerifyingKey<F, PC>
-where
-    F: PrimeField,
-    PC: PolynomialCommitment<F>,
-{
-    /// Prepare the circuit verifying key.
-    pub fn prepare(vk: &CircuitVerifyingKey<F, PC>) -> Self {
-        let mut prepared_index_comms = Vec::<PC::PreparedCommitment>::new();
-        for (_, comm) in vk.circuit_commitments.iter().enumerate() {
-            prepared_index_comms.push(PC::PreparedCommitment::prepare(comm));
-        }
-
-        let prepared_verifier_key = PC::PreparedVerifierKey::prepare(&vk.verifier_key);
-
-        let domain_h = EvaluationDomain::<F>::new(vk.circuit_info.num_constraints)
-            .ok_or(SynthesisError::PolynomialDegreeTooLarge)
-            .unwrap();
-        let domain_k = EvaluationDomain::<F>::new(vk.circuit_info.num_non_zero)
-            .ok_or(SynthesisError::PolynomialDegreeTooLarge)
-            .unwrap();
-
-        let domain_h_size = domain_h.size();
-        let domain_k_size = domain_k.size();
-
-        Self {
-            domain_h_size: domain_h_size as u64,
-            domain_k_size: domain_k_size as u64,
-            prepared_index_comms,
-            prepared_verifier_key,
-            orig_vk: vk.clone(),
-        }
-    }
-}
-
-impl<F: PrimeField, PC: PolynomialCommitment<F>> From<CircuitVerifyingKey<F, PC>>
-    for PreparedCircuitVerifyingKey<F, PC>
-{
-    fn from(other: CircuitVerifyingKey<F, PC>) -> Self {
-        Self::prepare(&other)
-    }
-}
-
-impl<F: PrimeField, PC: PolynomialCommitment<F>> From<CircuitProvingKey<F, PC>> for PreparedCircuitVerifyingKey<F, PC> {
-    fn from(other: CircuitProvingKey<F, PC>) -> Self {
-        Self::prepare(&other.circuit_verifying_key)
     }
 }

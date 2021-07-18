@@ -15,104 +15,81 @@
 // along with the snarkVM library. If not, see <https://www.gnu.org/licenses/>.
 
 use crate::{
-    algorithms::{
-        prf::Blake2sGadget,
-        signature::{SchnorrParametersGadget, SchnorrPublicKeyGadget, SchnorrPublicKeyRandomizationGadget},
-    },
+    algorithms::signature::{SchnorrGadget, SchnorrPublicKeyGadget},
     curves::edwards_bls12::EdwardsBls12Gadget,
-    fields::FpGadget,
     integers::uint::UInt8,
-    traits::{algorithms::SignaturePublicKeyRandomizationGadget, alloc::AllocGadget, eq::EqGadget},
+    traits::{algorithms::SignatureGadget, alloc::AllocGadget, eq::EqGadget},
     Boolean,
 };
 use snarkvm_algorithms::{signature::Schnorr, traits::SignatureScheme};
-use snarkvm_curves::{bls12_377::Fr, edwards_bls12::EdwardsAffine, traits::Group};
+use snarkvm_curves::{bls12_377::Fr, edwards_bls12::EdwardsProjective};
 use snarkvm_r1cs::{ConstraintSystem, TestConstraintSystem};
-use snarkvm_utilities::{rand::UniformRand, to_bytes_le, ToBytes};
+use snarkvm_utilities::ToBytes;
 
-use blake2::Blake2s;
 use rand::{thread_rng, Rng, SeedableRng};
 use rand_chacha::ChaChaRng;
 
-type SchnorrScheme = Schnorr<EdwardsAffine, Blake2s>;
-type TestSignature = Schnorr<EdwardsAffine, Blake2s>;
-type TestSignatureGadget = SchnorrPublicKeyRandomizationGadget<EdwardsAffine, Fr, EdwardsBls12Gadget, FpGadget<Fr>>;
+type SchnorrScheme = Schnorr<EdwardsProjective>;
+type TestSignature = Schnorr<EdwardsProjective>;
+type TestSignatureGadget = SchnorrGadget<EdwardsProjective, Fr, EdwardsBls12Gadget>;
 
 #[test]
 fn test_schnorr_signature_randomize_public_key_gadget() {
     // Setup environment
-
     let mut cs = TestConstraintSystem::<Fr>::new();
     let rng = &mut thread_rng();
 
     // Native Schnorr message
-
-    let mut message = [0u8; 32];
-    rng.fill(&mut message);
+    let message: [u8; 32] = rng.gen();
 
     // Native Schnorr signing
-
-    let schnorr_signature = SchnorrScheme::setup::<_>(rng).unwrap();
-    let private_key = schnorr_signature.generate_private_key(rng).unwrap();
-    let public_key = schnorr_signature.generate_public_key(&private_key).unwrap();
-    let signature = schnorr_signature.sign(&private_key, &message, rng).unwrap();
-    assert!(schnorr_signature.verify(&public_key, &message, &signature).unwrap());
+    let schnorr = SchnorrScheme::setup("test_schnorr_signature_randomize_public_key_gadget");
+    let private_key = schnorr.generate_private_key(rng).unwrap();
+    let public_key = schnorr.generate_public_key(&private_key).unwrap();
+    let signature = schnorr.sign(&private_key, &message, rng).unwrap();
+    assert!(schnorr.verify(&public_key, &message, &signature).unwrap());
 
     // Native Schnorr randomization
-
-    let random_scalar = to_bytes_le!(<EdwardsAffine as Group>::ScalarField::rand(rng)).unwrap();
-    let randomized_public_key = schnorr_signature
-        .randomize_public_key(&public_key, &random_scalar)
-        .unwrap();
-    let randomized_signature = schnorr_signature
-        .randomize_signature(&signature, &random_scalar)
-        .unwrap();
+    let randomizer: [u8; 32] = rng.gen();
+    let randomized_private_key = schnorr.randomize_private_key(&private_key, &randomizer).unwrap();
+    let randomized_public_key = schnorr.randomize_public_key(&public_key, &randomizer).unwrap();
+    let randomized_signature = schnorr.sign_randomized(&randomized_private_key, &message, rng).unwrap();
+    assert!(signature != randomized_signature);
     assert!(
-        schnorr_signature
+        schnorr
             .verify(&randomized_public_key, &message, &randomized_signature)
             .unwrap()
     );
 
     // Circuit Schnorr randomized public key (candidate)
-
-    let candidate_parameters_gadget = SchnorrParametersGadget::<EdwardsAffine, Fr, Blake2s>::alloc_input(
-        &mut cs.ns(|| "candidate_parameters"),
-        || Ok(schnorr_signature.parameters()),
-    )
-    .unwrap();
-
-    let candidate_public_key_gadget = SchnorrPublicKeyGadget::<EdwardsAffine, Fr, EdwardsBls12Gadget>::alloc(
+    let schnorr_gadget = TestSignatureGadget::alloc_input(&mut cs.ns(|| "schnorr_gadget"), || Ok(schnorr)).unwrap();
+    let candidate_public_key = SchnorrPublicKeyGadget::<EdwardsProjective, Fr, EdwardsBls12Gadget>::alloc(
         &mut cs.ns(|| "candidate_public_key"),
         || Ok(&public_key),
     )
     .unwrap();
-
-    let candidate_randomizer = UInt8::alloc_vec(&mut cs.ns(|| "candidate_randomizer"), &random_scalar).unwrap();
-
-    let candidate_randomized_public_key_gadget = <SchnorrPublicKeyRandomizationGadget<
-        EdwardsAffine,
-        Fr,
-        EdwardsBls12Gadget,
-        FpGadget<Fr>,
-    > as SignaturePublicKeyRandomizationGadget<SchnorrScheme, Fr>>::check_randomization_gadget(
-        &mut cs.ns(|| "candidate_randomized_public_key"),
-        &candidate_parameters_gadget,
-        &candidate_public_key_gadget,
-        &candidate_randomizer,
+    let candidate_randomizer = UInt8::alloc_vec(
+        &mut cs.ns(|| "candidate_randomizer"),
+        &randomizer.to_bytes_le().unwrap(),
     )
     .unwrap();
-
-    // Circuit Schnorr randomized public key (given)
-
-    let given_randomized_public_key_gadget =
-        SchnorrPublicKeyGadget::<EdwardsAffine, Fr, EdwardsBls12Gadget>::alloc_input(
-            &mut cs.ns(|| "given_randomized_public_key"),
-            || Ok(randomized_public_key),
+    let candidate_randomized_public_key = schnorr_gadget
+        .randomize_public_key(
+            &mut cs.ns(|| "candidate_randomized_public_key"),
+            &candidate_public_key,
+            &candidate_randomizer,
         )
         .unwrap();
 
-    candidate_randomized_public_key_gadget
-        .enforce_equal(&mut cs.ns(|| "enforce_equal"), &given_randomized_public_key_gadget)
+    // Circuit Schnorr randomized public key (given)
+    let given_randomized_public_key = SchnorrPublicKeyGadget::<EdwardsProjective, Fr, EdwardsBls12Gadget>::alloc_input(
+        &mut cs.ns(|| "given_randomized_public_key"),
+        || Ok(randomized_public_key),
+    )
+    .unwrap();
+
+    candidate_randomized_public_key
+        .enforce_equal(&mut cs.ns(|| "enforce_equal"), &given_randomized_public_key)
         .unwrap();
 
     if !cs.is_satisfied() {
@@ -126,30 +103,23 @@ fn schnorr_signature_verification_test() {
     let message = "Hi, I am a Schnorr signature!".as_bytes();
     let rng = &mut ChaChaRng::seed_from_u64(1231275789u64);
 
-    let schnorr_signature = TestSignature::setup::<_>(rng).unwrap();
-    let private_key = schnorr_signature.generate_private_key(rng).unwrap();
-    let public_key = schnorr_signature.generate_public_key(&private_key).unwrap();
-    let signature = schnorr_signature.sign(&private_key, &message, rng).unwrap();
-
-    assert!(schnorr_signature.verify(&public_key, &message, &signature).unwrap());
+    let schnorr = TestSignature::setup("schnorr_signature_verification_test");
+    let private_key = schnorr.generate_private_key(rng).unwrap();
+    let public_key = schnorr.generate_public_key(&private_key).unwrap();
+    let signature = schnorr.sign(&private_key, &message, rng).unwrap();
+    assert!(schnorr.verify(&public_key, &message, &signature).unwrap());
 
     let mut cs = TestConstraintSystem::<Fr>::new();
 
-    let parameter_gadget =
-        <TestSignatureGadget as SignaturePublicKeyRandomizationGadget<SchnorrScheme, Fr>>::ParametersGadget::alloc(
-            cs.ns(|| "alloc_parameters"),
-            || Ok(schnorr_signature.parameters),
-        )
-        .unwrap();
+    let schnorr_gadget = TestSignatureGadget::alloc_input(&mut cs.ns(|| "schnorr_gadget"), || Ok(schnorr)).unwrap();
 
     assert_eq!(cs.num_constraints(), 0);
 
-    let public_key_gadget =
-        <TestSignatureGadget as SignaturePublicKeyRandomizationGadget<SchnorrScheme, Fr>>::PublicKeyGadget::alloc(
-            cs.ns(|| "alloc_public_key"),
-            || Ok(public_key),
-        )
-        .unwrap();
+    let public_key_gadget = <TestSignatureGadget as SignatureGadget<SchnorrScheme, Fr>>::PublicKeyGadget::alloc(
+        cs.ns(|| "alloc_public_key"),
+        || Ok(public_key),
+    )
+    .unwrap();
 
     assert_eq!(cs.num_constraints(), 13);
 
@@ -157,26 +127,24 @@ fn schnorr_signature_verification_test() {
 
     assert_eq!(cs.num_constraints(), 245);
 
-    let signature_gadget =
-        <TestSignatureGadget as SignaturePublicKeyRandomizationGadget<SchnorrScheme, Fr>>::SignatureGadget::alloc(
-            cs.ns(|| "alloc_signature"),
-            || Ok(signature),
-        )
-        .unwrap();
+    let signature_gadget = <TestSignatureGadget as SignatureGadget<SchnorrScheme, Fr>>::SignatureGadget::alloc(
+        cs.ns(|| "alloc_signature"),
+        || Ok(signature),
+    )
+    .unwrap();
 
     assert_eq!(cs.num_constraints(), 245);
 
-    let verification =
-        <TestSignatureGadget as SignaturePublicKeyRandomizationGadget<SchnorrScheme, Fr>>::verify::<_, Blake2sGadget>(
+    let verification = schnorr_gadget
+        .verify(
             cs.ns(|| "verify"),
-            &parameter_gadget,
             &public_key_gadget,
             &message_gadget,
             &signature_gadget,
         )
         .unwrap();
 
-    assert_eq!(cs.num_constraints(), 49803);
+    assert_eq!(cs.num_constraints(), 6582);
 
     verification
         .enforce_equal(cs.ns(|| "check_verification"), &Boolean::constant(true))
@@ -194,43 +162,35 @@ fn failed_schnorr_signature_verification_test() {
     let bad_message = "Bad Message".as_bytes();
     let rng = &mut ChaChaRng::seed_from_u64(1231275789u64);
 
-    let schnorr_signature = TestSignature::setup::<_>(rng).unwrap();
-    let private_key = schnorr_signature.generate_private_key(rng).unwrap();
-    let public_key = schnorr_signature.generate_public_key(&private_key).unwrap();
-    let signature = schnorr_signature.sign(&private_key, &message, rng).unwrap();
+    let schnorr = TestSignature::setup("failed_schnorr_signature_verification_test");
+    let private_key = schnorr.generate_private_key(rng).unwrap();
+    let public_key = schnorr.generate_public_key(&private_key).unwrap();
+    let signature = schnorr.sign(&private_key, &message, rng).unwrap();
 
-    assert!(schnorr_signature.verify(&public_key, &message, &signature).unwrap());
-    assert!(!schnorr_signature.verify(&public_key, &bad_message, &signature).unwrap());
+    assert!(schnorr.verify(&public_key, &message, &signature).unwrap());
+    assert!(!schnorr.verify(&public_key, &bad_message, &signature).unwrap());
 
     let mut cs = TestConstraintSystem::<Fr>::new();
 
-    let parameter_gadget =
-        <TestSignatureGadget as SignaturePublicKeyRandomizationGadget<SchnorrScheme, Fr>>::ParametersGadget::alloc(
-            cs.ns(|| "alloc_parameters"),
-            || Ok(schnorr_signature.parameters),
-        )
-        .unwrap();
+    let schnorr_gadget = TestSignatureGadget::alloc_input(&mut cs.ns(|| "schnorr_gadget"), || Ok(schnorr)).unwrap();
 
-    let public_key_gadget =
-        <TestSignatureGadget as SignaturePublicKeyRandomizationGadget<SchnorrScheme, Fr>>::PublicKeyGadget::alloc(
-            cs.ns(|| "alloc_public_key"),
-            || Ok(public_key),
-        )
-        .unwrap();
+    let public_key_gadget = <TestSignatureGadget as SignatureGadget<SchnorrScheme, Fr>>::PublicKeyGadget::alloc(
+        cs.ns(|| "alloc_public_key"),
+        || Ok(public_key),
+    )
+    .unwrap();
 
     let bad_message_gadget = UInt8::alloc_vec(cs.ns(|| "alloc_message"), bad_message).unwrap();
 
-    let signature_gadget =
-        <TestSignatureGadget as SignaturePublicKeyRandomizationGadget<SchnorrScheme, Fr>>::SignatureGadget::alloc(
-            cs.ns(|| "alloc_signature"),
-            || Ok(signature),
-        )
-        .unwrap();
+    let signature_gadget = <TestSignatureGadget as SignatureGadget<SchnorrScheme, Fr>>::SignatureGadget::alloc(
+        cs.ns(|| "alloc_signature"),
+        || Ok(signature),
+    )
+    .unwrap();
 
-    let verification =
-        <TestSignatureGadget as SignaturePublicKeyRandomizationGadget<SchnorrScheme, Fr>>::verify::<_, Blake2sGadget>(
+    let verification = schnorr_gadget
+        .verify(
             cs.ns(|| "verify"),
-            &parameter_gadget,
             &public_key_gadget,
             &bad_message_gadget,
             &signature_gadget,

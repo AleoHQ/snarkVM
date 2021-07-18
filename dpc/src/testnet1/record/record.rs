@@ -50,9 +50,9 @@ pub struct Record<C: Testnet1Components> {
     pub(crate) value: u64,
     pub(crate) payload: Payload,
 
-    #[derivative(Default(value = "default_program_id::<C::ProgramVerificationKeyCRH>()"))]
+    #[derivative(Default(value = "default_program_id::<C::ProgramIDCRH>()"))]
     pub(crate) birth_program_id: Vec<u8>,
-    #[derivative(Default(value = "default_program_id::<C::ProgramVerificationKeyCRH>()"))]
+    #[derivative(Default(value = "default_program_id::<C::ProgramIDCRH>()"))]
     pub(crate) death_program_id: Vec<u8>,
 
     pub(crate) serial_number_nonce: <C::SerialNumberNonceCRH as CRH>::Output,
@@ -68,8 +68,6 @@ pub struct Record<C: Testnet1Components> {
 impl<C: Testnet1Components> Record<C> {
     #[allow(clippy::too_many_arguments)]
     pub fn new_full<R: Rng + CryptoRng>(
-        serial_number_nonce_parameters: &C::SerialNumberNonceCRH,
-        record_commitment_parameters: &C::RecordCommitment,
         owner: Address<C>,
         is_dummy: bool,
         value: u64,
@@ -86,10 +84,9 @@ impl<C: Testnet1Components> Record<C> {
         let sn_randomness: [u8; 32] = rng.gen();
 
         let crh_input = to_bytes_le![position, sn_randomness, joint_serial_numbers]?;
-        let serial_number_nonce = C::SerialNumberNonceCRH::hash(&serial_number_nonce_parameters, &crh_input)?;
+        let serial_number_nonce = C::serial_number_nonce_crh().hash(&crh_input)?;
 
         let mut record = Self::new(
-            record_commitment_parameters,
             owner,
             is_dummy,
             value,
@@ -108,7 +105,6 @@ impl<C: Testnet1Components> Record<C> {
 
     #[allow(clippy::too_many_arguments)]
     pub fn new<R: Rng + CryptoRng>(
-        record_commitment_parameters: &C::RecordCommitment,
         owner: Address<C>,
         is_dummy: bool,
         value: u64,
@@ -133,8 +129,7 @@ impl<C: Testnet1Components> Record<C> {
             serial_number_nonce  // 256 bits = 32 bytes
         ]?;
 
-        let commitment =
-            C::RecordCommitment::commit(&record_commitment_parameters, &commitment_input, &commitment_randomness)?;
+        let commitment = C::record_commitment().commit(&commitment_input, &commitment_randomness)?;
 
         end_timer!(record_time);
 
@@ -179,11 +174,17 @@ impl<C: Testnet1Components> Record<C> {
         }
     }
 
+    // TODO (howardwu) - Change the private_key input to a signature_public_key.
     pub fn to_serial_number(
         &self,
-        signature_parameters: &C::AccountSignature,
         private_key: &PrivateKey<C>,
-    ) -> Result<(<C::AccountSignature as SignatureScheme>::PublicKey, Vec<u8>), RecordError> {
+    ) -> Result<
+        (
+            <C::AccountSignature as SignatureScheme>::PublicKey,
+            <C::AccountSignature as SignatureScheme>::Randomizer,
+        ),
+        RecordError,
+    > {
         let timer = start_timer!(|| "Generate serial number");
 
         // TODO (howardwu) - Implement after removing parameters from the inputs.
@@ -195,12 +196,8 @@ impl<C: Testnet1Components> Record<C> {
         // Compute the serial number.
         let seed = FromBytes::read_le(to_bytes_le!(&private_key.sk_prf)?.as_slice())?;
         let input = FromBytes::read_le(to_bytes_le!(self.serial_number_nonce)?.as_slice())?;
-        let randomizer = to_bytes_le![C::PRF::evaluate(&seed, &input)?]?;
-        let serial_number = C::AccountSignature::randomize_public_key(
-            &signature_parameters,
-            &private_key.pk_sig(&signature_parameters)?,
-            &randomizer,
-        )?;
+        let randomizer = FromBytes::from_bytes_le(&C::PRF::evaluate(&seed, &input)?.to_bytes_le()?)?;
+        let serial_number = C::account_signature().randomize_public_key(&private_key.pk_sig()?, &randomizer)?;
 
         end_timer!(timer);
         Ok((serial_number, randomizer))

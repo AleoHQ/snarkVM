@@ -255,7 +255,7 @@ where
 
         let mut fs_rng = FS::new();
 
-        let hiding = !is_recursion;
+        let hiding = true;
 
         if is_recursion {
             fs_rng.absorb_bytes(&to_bytes_le![&Self::PROTOCOL_NAME].unwrap());

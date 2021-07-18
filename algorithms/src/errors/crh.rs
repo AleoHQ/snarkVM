@@ -24,6 +24,9 @@ pub enum CRHError {
     #[error("{}: {}", _0, _1)]
     Crate(&'static str, String),
 
+    #[error("{}", _0)]
+    CryptoHashError(#[from] crate::CryptoHashError),
+
     #[error("incorrect input length {} x 8 for window params {}x{}", _0, _1, _2)]
     IncorrectInputLength(usize, usize, usize),
 
@@ -32,6 +35,9 @@ pub enum CRHError {
 
     #[error("{}", _0)]
     Message(String),
+
+    #[error("Unable to hash to curve on message: {}", _0)]
+    UnableToHashToCurve(String),
 }
 
 impl From<Error> for CRHError {

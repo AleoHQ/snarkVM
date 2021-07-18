@@ -30,7 +30,6 @@ use snarkvm_r1cs::{ConstraintSystem, SynthesisError};
 
 use crate::{
     marlin_pc::{gadgets::verifier_key::VerifierKeyVar, PreparedVerifierKey},
-    PrepareGadget,
     Vec,
 };
 
@@ -46,6 +45,8 @@ pub struct PreparedVerifierKeyVar<
 {
     /// Generator of G1.
     pub prepared_g: Vec<PG::G1Gadget>,
+    /// The generator of G1 that is used for making a commitment hiding.
+    pub prepared_gamma_g: Vec<PG::G1Gadget>,
     /// Generator of G2.
     pub prepared_h: PG::G2PreparedGadget,
     /// Generator of G1, times first monomial.
@@ -116,55 +117,6 @@ where
     }
 }
 
-impl<TargetCurve, BaseCurve, PG>
-    PrepareGadget<VerifierKeyVar<TargetCurve, BaseCurve, PG>, <BaseCurve as PairingEngine>::Fr>
-    for PreparedVerifierKeyVar<TargetCurve, BaseCurve, PG>
-where
-    TargetCurve: PairingEngine,
-    BaseCurve: PairingEngine,
-    PG: PairingGadget<TargetCurve, <BaseCurve as PairingEngine>::Fr>,
-    <TargetCurve as PairingEngine>::G1Affine: ToConstraintField<<BaseCurve as PairingEngine>::Fr>,
-    <TargetCurve as PairingEngine>::G2Affine: ToConstraintField<<BaseCurve as PairingEngine>::Fr>,
-{
-    fn prepare<CS: ConstraintSystem<<BaseCurve as PairingEngine>::Fr>>(
-        mut cs: CS,
-        unprepared: &VerifierKeyVar<TargetCurve, BaseCurve, PG>,
-    ) -> Result<Self, SynthesisError> {
-        let supported_bits = <<TargetCurve as PairingEngine>::Fr as PrimeField>::size_in_bits();
-        let mut prepared_g = Vec::<PG::G1Gadget>::new();
-
-        let mut g: PG::G1Gadget = unprepared.g.clone();
-        for i in 0..supported_bits {
-            prepared_g.push(g.clone());
-            g.double_in_place(cs.ns(|| format!("double_in_place_{}", i)))?;
-        }
-
-        let prepared_h = PG::prepare_g2(cs.ns(|| "prepared_h"), unprepared.h.clone())?;
-        let prepared_beta_h = PG::prepare_g2(cs.ns(|| "prepared_beta_h"), unprepared.beta_h.clone())?;
-
-        let prepared_degree_bounds_and_shift_powers = if unprepared.degree_bounds_and_shift_powers.is_some() {
-            let mut res = Vec::<(usize, FpGadget<<BaseCurve as PairingEngine>::Fr>, Vec<PG::G1Gadget>)>::new();
-
-            for (d, d_gadget, shift_power) in unprepared.degree_bounds_and_shift_powers.as_ref().unwrap().iter() {
-                res.push((*d, (*d_gadget).clone(), vec![shift_power.clone()]));
-            }
-
-            Some(res)
-        } else {
-            None
-        };
-
-        Ok(Self {
-            prepared_g,
-            prepared_h,
-            prepared_beta_h,
-            prepared_degree_bounds_and_shift_powers,
-            constant_allocation: false,
-            origin_vk: Some(unprepared.clone()),
-        })
-    }
-}
-
 impl<TargetCurve, BaseCurve, PG> Clone for PreparedVerifierKeyVar<TargetCurve, BaseCurve, PG>
 where
     TargetCurve: PairingEngine,
@@ -176,6 +128,7 @@ where
     fn clone(&self) -> Self {
         Self {
             prepared_g: self.prepared_g.clone(),
+            prepared_gamma_g: self.prepared_gamma_g.clone(),
             prepared_h: self.prepared_h.clone(),
             prepared_beta_h: self.prepared_beta_h.clone(),
             prepared_degree_bounds_and_shift_powers: self.prepared_degree_bounds_and_shift_powers.clone(),
@@ -234,6 +187,16 @@ where
             })?);
         }
 
+        let mut prepared_gamma_g = Vec::<PG::G1Gadget>::new();
+        for (i, gamma_g) in obj.prepared_vk.prepared_gamma_g.iter().enumerate() {
+            prepared_gamma_g.push(<PG::G1Gadget as AllocGadget<
+                <TargetCurve as PairingEngine>::G1Projective,
+                <BaseCurve as PairingEngine>::Fr,
+            >>::alloc_constant(
+                cs.ns(|| format!("gamma_g_{}", i)), || Ok(gamma_g.into_projective())
+            )?);
+        }
+
         let prepared_h = PG::G2PreparedGadget::alloc(cs.ns(|| "prepared_h"), || Ok(&obj.prepared_vk.prepared_h))?;
         let prepared_beta_h =
             PG::G2PreparedGadget::alloc(cs.ns(|| "prepared_beta_h"), || Ok(&obj.prepared_vk.prepared_beta_h))?;
@@ -273,6 +236,7 @@ where
 
         Ok(Self {
             prepared_g,
+            prepared_gamma_g,
             prepared_h,
             prepared_beta_h,
             prepared_degree_bounds_and_shift_powers,
@@ -298,6 +262,16 @@ where
                 <BaseCurve as PairingEngine>::Fr,
             >>::alloc(cs.ns(|| format!("g_{}", i)), || {
                 Ok(g.into_projective())
+            })?);
+        }
+
+        let mut prepared_gamma_g = Vec::<PG::G1Gadget>::new();
+        for (i, gamma_g) in obj.prepared_vk.prepared_gamma_g.iter().enumerate() {
+            prepared_gamma_g.push(<PG::G1Gadget as AllocGadget<
+                <TargetCurve as PairingEngine>::G1Projective,
+                <BaseCurve as PairingEngine>::Fr,
+            >>::alloc(cs.ns(|| format!("gamma_g_{}", i)), || {
+                Ok(gamma_g.into_projective())
             })?);
         }
 
@@ -339,6 +313,7 @@ where
 
         Ok(Self {
             prepared_g,
+            prepared_gamma_g,
             prepared_h,
             prepared_beta_h,
             prepared_degree_bounds_and_shift_powers,
@@ -364,6 +339,16 @@ where
                 <BaseCurve as PairingEngine>::Fr,
             >>::alloc_input(cs.ns(|| format!("g_{}", i)), || {
                 Ok(g.into_projective())
+            })?);
+        }
+
+        let mut prepared_gamma_g = Vec::<PG::G1Gadget>::new();
+        for (i, gamma_g) in obj.prepared_vk.prepared_gamma_g.iter().enumerate() {
+            prepared_gamma_g.push(<PG::G1Gadget as AllocGadget<
+                <TargetCurve as PairingEngine>::G1Projective,
+                <BaseCurve as PairingEngine>::Fr,
+            >>::alloc_input(cs.ns(|| format!("gamma_g_{}", i)), || {
+                Ok(gamma_g.into_projective())
             })?);
         }
 
@@ -406,6 +391,7 @@ where
 
         Ok(Self {
             prepared_g,
+            prepared_gamma_g,
             prepared_h,
             prepared_beta_h,
             prepared_degree_bounds_and_shift_powers,
@@ -422,13 +408,18 @@ mod tests {
         bw6_761::BW6_761,
         ProjectiveCurve,
     };
-    use snarkvm_gadgets::{curves::bls12_377::PairingGadget as Bls12_377PairingGadget, traits::eq::EqGadget};
+    use snarkvm_gadgets::{
+        curves::bls12_377::PairingGadget as Bls12_377PairingGadget,
+        traits::eq::EqGadget,
+        PrepareGadget,
+    };
     use snarkvm_r1cs::TestConstraintSystem;
     use snarkvm_utilities::rand::test_rng;
 
-    use crate::{marlin_pc::MarlinKZG10, PCPreparedVerifierKey, PolynomialCommitment};
+    use crate::{marlin_pc::MarlinKZG10, PolynomialCommitment};
 
     use super::*;
+    use snarkvm_algorithms::Prepare;
 
     type PC = MarlinKZG10<Bls12_377>;
     type PG = Bls12_377PairingGadget;
@@ -452,7 +443,7 @@ mod tests {
         // Construct the verifying key.
         let (_committer_key, vk) = PC::trim(&pp, SUPPORTED_DEGREE, SUPPORTED_HIDING_BOUND, None).unwrap();
 
-        let prepared_vk = PreparedVerifierKey::prepare(&vk);
+        let prepared_vk = vk.prepare();
 
         // Allocate the prepared vk gadget.
         let prepared_vk_gadget = PreparedVerifierKeyVar::<_, BaseCurve, PG>::alloc(
@@ -556,14 +547,14 @@ mod tests {
         let vk_gadget = VerifierKeyVar::<_, BaseCurve, PG>::alloc(cs.ns(|| "alloc_vk"), || Ok(vk.clone())).unwrap();
 
         // Allocate the prepared vk gadget.
-        let prepared_vk = PreparedVerifierKey::prepare(&vk);
+        let prepared_vk = vk.prepare();
         let expected_prepared_vk_gadget = PreparedVerifierKeyVar::<_, BaseCurve, PG>::alloc(
             cs.ns(|| "alloc_prepared_vk"),
             || Ok(prepared_vk.clone()),
         )
         .unwrap();
 
-        let prepared_vk_gadget = PreparedVerifierKeyVar::prepare(cs.ns(|| "prepare"), &vk_gadget).unwrap();
+        let prepared_vk_gadget = vk_gadget.prepare(cs.ns(|| "prepare")).unwrap();
 
         // Enforce that the elements are equivalent.
 

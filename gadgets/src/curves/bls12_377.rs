@@ -215,4 +215,54 @@ mod test {
 
         assert!(cs.is_satisfied());
     }
+
+    #[test]
+    fn bls12_g1_gadget_is_eq_test() {
+        let mut cs = TestConstraintSystem::<Fq>::new();
+
+        let a: G1 = rand::random();
+        let b: G1 = a.clone();
+        let c: G1 = rand::random();
+
+        let a = G1Gadget::alloc(&mut cs.ns(|| "generate_a"), || Ok(a)).unwrap();
+        let b = G1Gadget::alloc(&mut cs.ns(|| "generate_b"), || Ok(b)).unwrap();
+        let c = G1Gadget::alloc(&mut cs.ns(|| "generate_c"), || Ok(c)).unwrap();
+
+        let a_is_eq_b = a.is_eq(cs.ns(|| "a_is_eq_b"), &b).unwrap();
+        let a_is_eq_c = a.is_eq(cs.ns(|| "a_is_eq_c"), &c).unwrap();
+
+        a_is_eq_b
+            .enforce_equal(cs.ns(|| " a_is_eq_b is true"), &Boolean::constant(true))
+            .unwrap();
+        a_is_eq_c
+            .enforce_equal(cs.ns(|| " a_is_eq_c is false"), &Boolean::constant(false))
+            .unwrap();
+
+        assert!(cs.is_satisfied());
+    }
+
+    #[test]
+    fn bls12_g2_gadget_is_eq_test() {
+        let mut cs = TestConstraintSystem::<Fq>::new();
+
+        let a: G2 = rand::random();
+        let b: G2 = a.clone();
+        let c: G2 = rand::random();
+
+        let a = G2Gadget::alloc(&mut cs.ns(|| "generate_a"), || Ok(a)).unwrap();
+        let b = G2Gadget::alloc(&mut cs.ns(|| "generate_b"), || Ok(b)).unwrap();
+        let c = G2Gadget::alloc(&mut cs.ns(|| "generate_c"), || Ok(c)).unwrap();
+
+        let a_is_eq_b = a.is_eq(cs.ns(|| "a_is_eq_b"), &b).unwrap();
+        let a_is_eq_c = a.is_eq(cs.ns(|| "a_is_eq_c"), &c).unwrap();
+
+        a_is_eq_b
+            .enforce_equal(cs.ns(|| " a_is_eq_b is true"), &Boolean::constant(true))
+            .unwrap();
+        a_is_eq_c
+            .enforce_equal(cs.ns(|| " a_is_eq_c is false"), &Boolean::constant(false))
+            .unwrap();
+
+        assert!(cs.is_satisfied());
+    }
 }

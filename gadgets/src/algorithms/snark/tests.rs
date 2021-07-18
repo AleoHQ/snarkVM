@@ -26,16 +26,14 @@ use crate::{
     algorithms::snark::*,
     bits::Boolean,
     curves::bls12_377::PairingGadget as Bls12_377PairingGadget,
-    traits::{
-        algorithms::snark::SNARKVerifierGadget,
-        alloc::{AllocBytesGadget, AllocGadget},
-    },
+    traits::{algorithms::snark::SNARKVerifierGadget, alloc::AllocGadget},
+    AllocBytesGadget,
 };
 
 type TestProofSystem = GM17<Bls12_377, Bench<Fr>, Fr>;
-type TestVerifierGadget = GM17VerifierGadget<Bls12_377, Fq, Bls12_377PairingGadget>;
-type TestProofGadget = GM17ProofGadget<Bls12_377, Fq, Bls12_377PairingGadget>;
-type TestVkGadget = GM17VerifyingKeyGadget<Bls12_377, Fq, Bls12_377PairingGadget>;
+type TestVerifierGadget = GM17VerifierGadget<Bls12_377, Bls12_377PairingGadget>;
+type TestProofGadget = GM17ProofGadget<Bls12_377, Bls12_377PairingGadget>;
+type TestVkGadget = GM17VerifyingKeyGadget<Bls12_377, Bls12_377PairingGadget>;
 
 struct Bench<F: Field> {
     inputs: Vec<Option<F>>,
@@ -133,7 +131,7 @@ fn gm17_verifier_test() {
         let vk_gadget = TestVkGadget::alloc_input(cs.ns(|| "Vk"), || Ok(&params.vk)).unwrap();
         let proof_gadget = TestProofGadget::alloc(cs.ns(|| "Proof"), || Ok(proof.clone())).unwrap();
         println!("Time to verify!");
-        <TestVerifierGadget as SNARKVerifierGadget<TestProofSystem, Fq>>::check_verify(
+        <TestVerifierGadget as SNARKVerifierGadget<Fr, Fq, TestProofSystem>>::check_verify(
             cs.ns(|| "Verify"),
             &vk_gadget,
             input_gadgets.iter().cloned(),
@@ -209,7 +207,7 @@ fn gm17_verifier_bytes_test() {
         let vk_gadget = TestVkGadget::alloc_input_bytes(cs.ns(|| "Vk"), || Ok(vk_bytes)).unwrap();
         let proof_gadget = TestProofGadget::alloc_bytes(cs.ns(|| "Proof"), || Ok(proof_bytes)).unwrap();
         println!("Time to verify!");
-        <TestVerifierGadget as SNARKVerifierGadget<TestProofSystem, Fq>>::check_verify(
+        <TestVerifierGadget as SNARKVerifierGadget<Fr, Fq, TestProofSystem>>::check_verify(
             cs.ns(|| "Verify"),
             &vk_gadget,
             input_gadgets.iter().cloned(),
@@ -222,7 +220,6 @@ fn gm17_verifier_bytes_test() {
             println!("{:?}", cs.which_is_unsatisfied().unwrap());
             println!("=========================================================");
         }
-
         // cs.print_named_objects();
         assert!(cs.is_satisfied());
     }
@@ -289,7 +286,7 @@ fn gm17_verifier_num_constraints_test() {
 
         let proof_gadget_constraints = cs.num_constraints() - vk_gadget_constraints;
 
-        <TestVerifierGadget as SNARKVerifierGadget<TestProofSystem, Fq>>::check_verify(
+        <TestVerifierGadget as SNARKVerifierGadget<Fr, Fq, TestProofSystem>>::check_verify(
             cs.ns(|| "Verify"),
             &vk_gadget,
             input_gadgets.iter().cloned(),
@@ -314,9 +311,9 @@ fn gm17_verifier_num_constraints_test() {
         println!("verifier_gadget_constraints : {:?}", verifier_gadget_constraints);
 
         const INPUT_GADGET_CONSTRAINTS: usize = 25600;
-        const VK_GADGET_CONSTRAINTS: usize = 106;
+        const VK_GADGET_CONSTRAINTS: usize = 436;
         const PROOF_GADGET_CONSTRAINTS: usize = 30199;
-        const VERIFIER_GADGET_CONSTRAINTS: usize = 323348;
+        const VERIFIER_GADGET_CONSTRAINTS: usize = 323678;
 
         assert_eq!(input_gadget_constraints, INPUT_GADGET_CONSTRAINTS);
         assert_eq!(vk_gadget_constraints, VK_GADGET_CONSTRAINTS);

@@ -359,8 +359,7 @@ pub fn fft_field_test<F: PrimeField + FftField>() {
     let two_adic_root_of_unity = F::two_adic_root_of_unity();
     assert!(!two_adic_root_of_unity.is_zero());
     assert_eq!(two_adic_root_of_unity.pow([1 << two_adicity]), F::one());
-    // TODO (howardwu): CRITICAL - Reenable this after BLS12-377 Fr root_of_unity has been fixed.
-    // assert_eq!(generator.pow(trace.into_repr().as_ref()), two_adic_root_of_unity);
+    assert_eq!(generator.pow(trace.to_repr().as_ref()), two_adic_root_of_unity);
 }
 
 pub fn primefield_test<F: PrimeField>() {

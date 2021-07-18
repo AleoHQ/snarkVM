@@ -14,56 +14,43 @@
 // You should have received a copy of the GNU General Public License
 // along with the snarkVM library. If not, see <https://www.gnu.org/licenses/>.
 
-use super::bowe_hopwood_pedersen_parameters::*;
-use crate::{
-    crh::{PedersenCRH, PedersenCRHParameters},
-    errors::CRHError,
-    traits::CRH,
-};
-use snarkvm_curves::Group;
+use crate::{crh::PedersenCRH, hash_to_curve::hash_to_curve, CRHError, CRH};
+use snarkvm_curves::{AffineCurve, ProjectiveCurve};
 use snarkvm_fields::{ConstraintFieldError, Field, PrimeField, ToConstraintField};
-use snarkvm_utilities::biginteger::biginteger::BigInteger;
+use snarkvm_utilities::{BigInteger, FromBytes, ToBytes};
 
 use bitvec::{order::Lsb0, view::BitView};
-use rand::Rng;
+use once_cell::sync::OnceCell;
+use std::{
+    fmt::Debug,
+    io::{Read, Result as IoResult, Write},
+};
+
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 
 // we cant use these in array sizes since they are from a trait (and cant be refered to at const time)
 const MAX_WINDOW_SIZE: usize = 256;
 const MAX_NUM_WINDOWS: usize = 4096;
 
+pub const BOWE_HOPWOOD_CHUNK_SIZE: usize = 3;
+pub const BOWE_HOPWOOD_LOOKUP_SIZE: usize = 2usize.pow(BOWE_HOPWOOD_CHUNK_SIZE as u32);
+
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BoweHopwoodPedersenCRH<G: Group, const NUM_WINDOWS: usize, const WINDOW_SIZE: usize> {
-    pub parameters: PedersenCRHParameters<G, NUM_WINDOWS, WINDOW_SIZE>,
-    pub bowe_hopwood_parameters: BoweHopwoodPedersenCRHParameters<G>,
+pub struct BoweHopwoodPedersenCRH<G: ProjectiveCurve, const NUM_WINDOWS: usize, const WINDOW_SIZE: usize> {
+    pub crh: PedersenCRH<G, NUM_WINDOWS, WINDOW_SIZE>,
+    base_lookup: OnceCell<Vec<Vec<[G; BOWE_HOPWOOD_LOOKUP_SIZE]>>>,
 }
 
-impl<G: Group, const NUM_WINDOWS: usize, const WINDOW_SIZE: usize> BoweHopwoodPedersenCRH<G, NUM_WINDOWS, WINDOW_SIZE> {
-    pub fn create_generators<R: Rng>(rng: &mut R) -> Vec<Vec<G>> {
-        let mut generators = Vec::with_capacity(NUM_WINDOWS);
-        for _ in 0..NUM_WINDOWS {
-            let mut generators_for_segment = Vec::with_capacity(WINDOW_SIZE);
-            let mut base = G::rand(rng);
-            for _ in 0..WINDOW_SIZE {
-                generators_for_segment.push(base);
-                for _ in 0..4 {
-                    base.double_in_place();
-                }
-            }
-            generators.push(generators_for_segment);
-        }
-        generators
-    }
-}
-
-impl<G: Group, const NUM_WINDOWS: usize, const WINDOW_SIZE: usize> CRH
+impl<G: ProjectiveCurve, const NUM_WINDOWS: usize, const WINDOW_SIZE: usize> CRH
     for BoweHopwoodPedersenCRH<G, NUM_WINDOWS, WINDOW_SIZE>
 {
-    type Output = G;
-    type Parameters = PedersenCRHParameters<G, NUM_WINDOWS, WINDOW_SIZE>;
+    type Output = G::Affine;
+    type Parameters = PedersenCRH<G, NUM_WINDOWS, WINDOW_SIZE>;
 
     const INPUT_SIZE_BITS: usize = PedersenCRH::<G, NUM_WINDOWS, WINDOW_SIZE>::INPUT_SIZE_BITS;
 
-    fn setup<R: Rng>(rng: &mut R) -> Self {
+    fn setup(message: &str) -> Self {
         fn calculate_num_chunks_in_segment<F: PrimeField>() -> usize {
             let upper_limit = F::modulus_minus_one_div_two();
             let mut c = 0;
@@ -91,16 +78,12 @@ impl<G: Group, const NUM_WINDOWS: usize, const WINDOW_SIZE: usize> CRH
             WINDOW_SIZE,
             WINDOW_SIZE * NUM_WINDOWS * BOWE_HOPWOOD_CHUNK_SIZE
         ));
-        let bases = Self::create_generators(rng);
+        let bases = Self::create_generators(message);
         end_timer!(time);
 
-        let parameters = Self::Parameters::from(bases);
-
-        let bowe_hopwood_parameters = BoweHopwoodPedersenCRHParameters::new();
-
         Self {
-            parameters,
-            bowe_hopwood_parameters,
+            crh: bases.into(),
+            base_lookup: OnceCell::new(),
         }
     }
 
@@ -126,19 +109,19 @@ impl<G: Group, const NUM_WINDOWS: usize, const WINDOW_SIZE: usize> CRH
         assert_eq!(bit_len % BOWE_HOPWOOD_CHUNK_SIZE, 0);
 
         assert_eq!(
-            self.parameters.bases.len(),
+            self.crh.bases.len(),
             NUM_WINDOWS,
             "Incorrect pp of size {:?} for window params {:?}x{:?}x{}",
-            self.parameters.bases.len(),
+            self.crh.bases.len(),
             WINDOW_SIZE,
             NUM_WINDOWS,
             BOWE_HOPWOOD_CHUNK_SIZE,
         );
-        assert_eq!(self.parameters.bases.len(), NUM_WINDOWS);
-        for bases in self.parameters.bases.iter() {
+        assert_eq!(self.crh.bases.len(), NUM_WINDOWS);
+        for bases in self.crh.bases.iter() {
             assert_eq!(bases.len(), WINDOW_SIZE);
         }
-        let base_lookup = self.bowe_hopwood_parameters.base_lookup(&self.parameters);
+        let base_lookup = self.base_lookup(&self.crh);
         assert_eq!(base_lookup.len(), NUM_WINDOWS);
         for bases in base_lookup.iter() {
             assert_eq!(bases.len(), WINDOW_SIZE);
@@ -166,38 +149,122 @@ impl<G: Group, const NUM_WINDOWS: usize, const WINDOW_SIZE: usize> CRH
 
         end_timer!(eval_time);
 
-        Ok(result)
+        Ok(result.into_affine())
     }
 
     fn parameters(&self) -> &Self::Parameters {
-        &self.parameters
+        &self.crh
     }
 }
 
-impl<G: Group, const NUM_WINDOWS: usize, const WINDOW_SIZE: usize>
-    From<PedersenCRHParameters<G, NUM_WINDOWS, WINDOW_SIZE>> for BoweHopwoodPedersenCRH<G, NUM_WINDOWS, WINDOW_SIZE>
+impl<G: ProjectiveCurve, const NUM_WINDOWS: usize, const WINDOW_SIZE: usize>
+    BoweHopwoodPedersenCRH<G, NUM_WINDOWS, WINDOW_SIZE>
 {
-    fn from(parameters: PedersenCRHParameters<G, NUM_WINDOWS, WINDOW_SIZE>) -> Self {
+    pub fn create_generators(message: &str) -> Vec<Vec<G>> {
+        let mut generators = Vec::with_capacity(NUM_WINDOWS);
+        for index in 0..NUM_WINDOWS {
+            // Construct an indexed message to attempt to sample a base.
+            let indexed_message = format!("{} at {}", message, index);
+            let (generator, _, _) = hash_to_curve::<G::Affine>(&indexed_message);
+            let mut base = generator.into_projective();
+            // Compute the generators for the sampled base.
+            let mut generators_for_segment = Vec::with_capacity(WINDOW_SIZE);
+            for _ in 0..WINDOW_SIZE {
+                generators_for_segment.push(base);
+                for _ in 0..4 {
+                    base.double_in_place();
+                }
+            }
+            generators.push(generators_for_segment);
+        }
+        generators
+    }
+
+    pub fn base_lookup(
+        &self,
+        input: &PedersenCRH<G, NUM_WINDOWS, WINDOW_SIZE>,
+    ) -> &Vec<Vec<[G; BOWE_HOPWOOD_LOOKUP_SIZE]>> {
+        self.base_lookup
+            .get_or_try_init::<_, ()>(|| {
+                Ok(cfg_iter!(input.bases)
+                    .map(|x| {
+                        x.iter()
+                            .map(|g| {
+                                let mut out = [G::zero(); BOWE_HOPWOOD_LOOKUP_SIZE];
+                                for i in 0..BOWE_HOPWOOD_LOOKUP_SIZE {
+                                    let mut encoded = *g;
+                                    if (i & 0x01) != 0 {
+                                        encoded += g;
+                                    }
+                                    if (i & 0x02) != 0 {
+                                        encoded += g.double();
+                                    }
+                                    if (i & 0x04) != 0 {
+                                        encoded = encoded.neg();
+                                    }
+                                    out[i] = encoded;
+                                }
+                                out
+                            })
+                            .collect()
+                    })
+                    .collect())
+            })
+            .expect("failed to init BoweHopwoodPedersenCRHParameters")
+    }
+}
+
+impl<G: ProjectiveCurve, const NUM_WINDOWS: usize, const WINDOW_SIZE: usize>
+    From<PedersenCRH<G, NUM_WINDOWS, WINDOW_SIZE>> for BoweHopwoodPedersenCRH<G, NUM_WINDOWS, WINDOW_SIZE>
+{
+    fn from(crh: PedersenCRH<G, NUM_WINDOWS, WINDOW_SIZE>) -> Self {
         Self {
-            bowe_hopwood_parameters: BoweHopwoodPedersenCRHParameters::new(),
-            parameters,
+            crh,
+            base_lookup: OnceCell::new(),
         }
     }
 }
 
-impl<F: Field, G: Group + ToConstraintField<F>, const NUM_WINDOWS: usize, const WINDOW_SIZE: usize> ToConstraintField<F>
+impl<G: ProjectiveCurve, const NUM_WINDOWS: usize, const WINDOW_SIZE: usize> From<Vec<Vec<G>>>
+    for BoweHopwoodPedersenCRH<G, NUM_WINDOWS, WINDOW_SIZE>
+{
+    fn from(bases: Vec<Vec<G>>) -> Self {
+        Self {
+            crh: bases.into(),
+            base_lookup: OnceCell::new(),
+        }
+    }
+}
+
+impl<G: ProjectiveCurve, const NUM_WINDOWS: usize, const WINDOW_SIZE: usize> ToBytes
+    for BoweHopwoodPedersenCRH<G, NUM_WINDOWS, WINDOW_SIZE>
+{
+    fn write_le<W: Write>(&self, writer: W) -> IoResult<()> {
+        self.crh.write_le(writer)
+    }
+}
+
+impl<G: ProjectiveCurve, const NUM_WINDOWS: usize, const WINDOW_SIZE: usize> FromBytes
     for BoweHopwoodPedersenCRH<G, NUM_WINDOWS, WINDOW_SIZE>
 {
     #[inline]
+    fn read_le<R: Read>(reader: R) -> IoResult<Self> {
+        Ok(PedersenCRH::read_le(reader)?.into())
+    }
+}
+
+impl<F: Field, G: ProjectiveCurve + ToConstraintField<F>, const NUM_WINDOWS: usize, const WINDOW_SIZE: usize>
+    ToConstraintField<F> for BoweHopwoodPedersenCRH<G, NUM_WINDOWS, WINDOW_SIZE>
+{
+    #[inline]
     fn to_field_elements(&self) -> Result<Vec<F>, ConstraintFieldError> {
-        self.parameters.to_field_elements()
+        self.crh.to_field_elements()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::SeedableRng;
     use snarkvm_curves::edwards_bls12::EdwardsProjective;
 
     const NUM_WINDOWS: usize = 8;
@@ -205,16 +272,14 @@ mod tests {
 
     #[test]
     fn test_bowe_pedersen() {
-        let mut rng = rand_xorshift::XorShiftRng::seed_from_u64(23453245);
-        let parameters = <BoweHopwoodPedersenCRH<EdwardsProjective, NUM_WINDOWS, WINDOW_SIZE> as CRH>::setup(&mut rng);
+        let crh =
+            <BoweHopwoodPedersenCRH<EdwardsProjective, NUM_WINDOWS, WINDOW_SIZE> as CRH>::setup("test_bowe_pedersen");
         let input = vec![127u8; 32];
 
-        let output =
-            <BoweHopwoodPedersenCRH<EdwardsProjective, NUM_WINDOWS, WINDOW_SIZE> as CRH>::hash(&parameters, &input)
-                .unwrap();
+        let output = crh.hash(&input).unwrap();
         assert_eq!(
             &*output.to_string(),
-            "Affine(x=1458830605996255967666145170206084970380287513737423487919697505288312101007, y=4724361822497728774087744092818831022870480949262013688485525440243906394966)"
+            "Affine(x=2591648422993904809826711498838675948697848925001720514073745852367402669969, y=3090936323959984371620829350469190013004970213099218155955516230575434312314)"
         );
     }
 }

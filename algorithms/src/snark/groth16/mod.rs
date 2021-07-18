@@ -19,7 +19,7 @@
 //! [`Groth16`]: https://eprint.iacr.org/2016/260.pdf
 
 use snarkvm_curves::traits::{AffineCurve, PairingCurve, PairingEngine};
-use snarkvm_fields::Field;
+use snarkvm_fields::{ConstraintFieldError, Field, ToConstraintField};
 use snarkvm_r1cs::{Index, LinearCombination};
 use snarkvm_utilities::{errors::SerializationError, serialize::*, FromBytes, ToBytes};
 
@@ -49,6 +49,7 @@ mod verifier;
 #[cfg(test)]
 mod tests;
 
+use crate::Prepare;
 pub use generator::*;
 pub use prover::*;
 pub use verifier::*;
@@ -196,6 +197,21 @@ impl<E: PairingEngine> ToBytes for VerifyingKey<E> {
     }
 }
 
+impl<E: PairingEngine> ToConstraintField<E::Fq> for VerifyingKey<E> {
+    fn to_field_elements(&self) -> Result<Vec<E::Fq>, ConstraintFieldError> {
+        let mut res = vec![];
+        res.append(&mut self.alpha_g1.to_field_elements()?);
+        res.append(&mut self.beta_g2.to_field_elements()?);
+        res.append(&mut self.gamma_g2.to_field_elements()?);
+        res.append(&mut self.delta_g2.to_field_elements()?);
+        for elem in self.gamma_abc_g1.iter() {
+            res.append(&mut elem.to_field_elements()?);
+        }
+
+        Ok(res)
+    }
+}
+
 impl<E: PairingEngine> FromBytes for VerifyingKey<E> {
     #[inline]
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
@@ -249,6 +265,12 @@ impl<E: PairingEngine> VerifyingKey<E> {
             delta_g2,
             gamma_abc_g1,
         })
+    }
+}
+
+impl<E: PairingEngine> Prepare<PreparedVerifyingKey<E>> for VerifyingKey<E> {
+    fn prepare(&self) -> PreparedVerifyingKey<E> {
+        prepare_verifying_key(self.clone())
     }
 }
 

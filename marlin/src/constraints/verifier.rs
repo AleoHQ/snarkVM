@@ -32,8 +32,8 @@ use crate::{
     PoseidonSponge,
     PoseidonSpongeVar,
 };
-use snarkvm_algorithms::fft::EvaluationDomain;
-use snarkvm_fields::{PoseidonMDSField, PrimeField};
+use snarkvm_algorithms::{crypto_hash::PoseidonDefaultParametersField, fft::EvaluationDomain};
+use snarkvm_fields::PrimeField;
 use snarkvm_gadgets::{
     bits::Boolean,
     nonnative::{params::OptimizationType, NonNativeFieldVar},
@@ -42,6 +42,7 @@ use snarkvm_gadgets::{
         eq::EqGadget,
         fields::{FieldGadget, ToConstraintFieldGadget},
     },
+    PrepareGadget,
 };
 use snarkvm_polycommit::{PCCheckRandomDataVar, PCCheckVar};
 use snarkvm_r1cs::{ConstraintSynthesizer, ConstraintSystem, SynthesisError, ToConstraintField};
@@ -67,11 +68,11 @@ pub type FSG<InnerField, OuterField> =
     FiatShamirAlgebraicSpongeRngVar<InnerField, OuterField, PoseidonSponge<OuterField>, PoseidonSpongeVar<OuterField>>;
 
 impl<TargetField, BaseField, PC, PCG, FS, MM, C, V>
-    SNARKVerifierGadget<MarlinSNARK<TargetField, BaseField, PC, FS, MM, C, V>, BaseField>
+    SNARKVerifierGadget<TargetField, BaseField, MarlinSNARK<TargetField, BaseField, PC, FS, MM, C, V>>
     for MarlinVerificationGadget<TargetField, BaseField, PC, PCG>
 where
     TargetField: PrimeField,
-    BaseField: PrimeField + PoseidonMDSField,
+    BaseField: PrimeField + PoseidonDefaultParametersField,
     PC: PolynomialCommitment<TargetField>,
     PC::VerifierKey: ToConstraintField<BaseField>,
     PC::Commitment: ToConstraintField<BaseField>,
@@ -84,8 +85,7 @@ where
     V: ToConstraintField<TargetField>,
 {
     type Input = NonNativeFieldVar<TargetField, BaseField>;
-    type ProofGadget = ProofVar<TargetField, BaseField, PC, PCG>;
-    type VerificationKeyGadget = PreparedCircuitVerifyingKeyVar<
+    type PreparedVerificationKeyGadget = PreparedCircuitVerifyingKeyVar<
         TargetField,
         BaseField,
         PC,
@@ -93,6 +93,8 @@ where
         FSA<TargetField, BaseField>,
         FSG<TargetField, BaseField>,
     >;
+    type ProofGadget = ProofVar<TargetField, BaseField, PC, PCG>;
+    type VerificationKeyGadget = CircuitVerifyingKeyVar<TargetField, BaseField, PC, PCG>;
 
     fn check_verify<CS: ConstraintSystem<BaseField>, I: Iterator<Item = Self::Input>>(
         mut cs: CS,
@@ -100,11 +102,19 @@ where
         input: I,
         proof: &Self::ProofGadget,
     ) -> Result<(), SynthesisError> {
+        let pvk = verification_key.prepare(cs.ns(|| "prepare vk"))?;
+        <Self as SNARKVerifierGadget<TargetField, BaseField, MarlinSNARK<TargetField, BaseField, PC, FS, MM, C, V>>>::prepared_check_verify(cs, &pvk, input, proof)
+    }
+
+    fn prepared_check_verify<'a, CS: ConstraintSystem<BaseField>, I: Iterator<Item = Self::Input>>(
+        mut cs: CS,
+        pvk: &Self::PreparedVerificationKeyGadget,
+        input: I,
+        proof: &Self::ProofGadget,
+    ) -> Result<(), SynthesisError> {
         let inputs: Vec<_> = input.collect();
-        let result = Self::prepared_verify(cs.ns(|| "prepared_verify"), verification_key, &inputs, proof).unwrap();
-
+        let result = Self::prepared_verify(cs.ns(|| "prepared_verify"), pvk, &inputs, proof).unwrap();
         result.enforce_equal(cs.ns(|| "enforce_verification_correctness"), &Boolean::Constant(true))?;
-
         Ok(())
     }
 }
@@ -112,7 +122,7 @@ where
 impl<TargetField, BaseField, PC, PCG> MarlinVerificationGadget<TargetField, BaseField, PC, PCG>
 where
     TargetField: PrimeField,
-    BaseField: PrimeField + PoseidonMDSField,
+    BaseField: PrimeField + PoseidonDefaultParametersField,
     PC: PolynomialCommitment<TargetField>,
     PCG: PCCheckVar<TargetField, PC, BaseField>,
     PC::Commitment: ToConstraintField<BaseField>,
@@ -260,11 +270,10 @@ where
         public_input: &[NonNativeFieldVar<TargetField, BaseField>],
         proof: &ProofVar<TargetField, BaseField, PC, PCG>,
     ) -> Result<Boolean, MarlinError<PC::Error>> {
-        let prepared_verifying_key = PreparedCircuitVerifyingKeyVar::<TargetField, BaseField, PC, PCG, PR, R>::prepare(
-            cs.ns(|| "prepare"),
-            &verifying_key,
-        )?;
-        Self::prepared_verify(
+        eprintln!("before prepared_VK: constraints: {}", cs.num_constraints());
+
+        let prepared_verifying_key = verifying_key.prepare(cs.ns(|| "prepare"))?;
+        Self::prepared_verify::<_, PR, R>(
             cs.ns(|| "prepared_verify"),
             &prepared_verifying_key,
             public_input,

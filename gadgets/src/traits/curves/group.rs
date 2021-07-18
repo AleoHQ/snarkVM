@@ -14,17 +14,6 @@
 // You should have received a copy of the GNU General Public License
 // along with the snarkVM library. If not, see <https://www.gnu.org/licenses/>.
 
-use std::{borrow::Borrow, fmt::Debug};
-
-use itertools::Itertools;
-
-use snarkvm_curves::{
-    traits::{AffineCurve, Group},
-    ProjectiveCurve,
-};
-use snarkvm_fields::Field;
-use snarkvm_r1cs::{errors::SynthesisError, ConstraintSystem};
-
 use crate::{
     bits::{Boolean, ToBitsBEGadget, ToBytesGadget},
     traits::{
@@ -33,6 +22,12 @@ use crate::{
         select::CondSelectGadget,
     },
 };
+use snarkvm_curves::traits::{AffineCurve, Group, ProjectiveCurve};
+use snarkvm_fields::Field;
+use snarkvm_r1cs::{errors::SynthesisError, ConstraintSystem};
+
+use itertools::Itertools;
+use std::{borrow::Borrow, fmt::Debug};
 
 pub trait GroupGadget<G: Group, F: Field>:
     Sized
@@ -257,7 +252,9 @@ pub trait GroupGadget<G: Group, F: Field>:
     fn cost_of_double() -> usize;
 }
 
-pub trait CompressedGroupGadget<G: Group + ProjectiveCurve, F: Field>: GroupGadget<G, F> {
+pub trait CurveGadget<G: ProjectiveCurve, F: Field>: GroupGadget<G, F> + AllocGadget<G::Affine, F> {}
+
+pub trait CompressedGroupGadget<G: ProjectiveCurve, F: Field>: CurveGadget<G, F> {
     type BaseFieldGadget: ToBytesGadget<F>
         + EqGadget<F>
         + CondSelectGadget<F>

@@ -28,3 +28,4 @@ pub(crate) use prepared_commitment::*;
 
 /// Prepared gadget for a Marlin-KZG10 commitment, with a string label and degree bound.
 pub mod prepared_labeled_commitment;
+pub(crate) use prepared_labeled_commitment::*;

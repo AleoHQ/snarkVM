@@ -15,79 +15,94 @@
 // along with the snarkVM library. If not, see <https://www.gnu.org/licenses/>.
 
 use crate::{
-    crh::{BoweHopwoodPedersenCRH, BoweHopwoodPedersenCRHParameters, PedersenCRH, PedersenCRHParameters},
-    errors::CRHError,
-    traits::CRH,
+    crh::{BoweHopwoodPedersenCRH, PedersenCRH},
+    CRHError,
+    CRH,
 };
-use snarkvm_curves::{AffineCurve, Group, ProjectiveCurve};
+use snarkvm_curves::{AffineCurve, ProjectiveCurve};
 use snarkvm_fields::{ConstraintFieldError, Field, ToConstraintField};
+use snarkvm_utilities::{FromBytes, ToBytes};
 
-use rand::Rng;
+use std::{
+    fmt::Debug,
+    io::{Read, Result as IoResult, Write},
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BoweHopwoodPedersenCompressedCRH<
-    G: Group + ProjectiveCurve,
-    const NUM_WINDOWS: usize,
-    const WINDOW_SIZE: usize,
-> {
-    pub parameters: PedersenCRHParameters<G, NUM_WINDOWS, WINDOW_SIZE>,
-    pub bowe_hopwood_parameters: BoweHopwoodPedersenCRHParameters<G>,
+pub struct BoweHopwoodPedersenCompressedCRH<G: ProjectiveCurve, const NUM_WINDOWS: usize, const WINDOW_SIZE: usize> {
+    pub bhp: BoweHopwoodPedersenCRH<G, NUM_WINDOWS, WINDOW_SIZE>,
 }
 
-impl<G: Group + ProjectiveCurve, const NUM_WINDOWS: usize, const WINDOW_SIZE: usize> CRH
+impl<G: ProjectiveCurve, const NUM_WINDOWS: usize, const WINDOW_SIZE: usize> CRH
     for BoweHopwoodPedersenCompressedCRH<G, NUM_WINDOWS, WINDOW_SIZE>
 {
     type Output = <G::Affine as AffineCurve>::BaseField;
-    type Parameters = PedersenCRHParameters<G, NUM_WINDOWS, WINDOW_SIZE>;
+    type Parameters = PedersenCRH<G, NUM_WINDOWS, WINDOW_SIZE>;
 
     const INPUT_SIZE_BITS: usize = PedersenCRH::<G, NUM_WINDOWS, WINDOW_SIZE>::INPUT_SIZE_BITS;
 
-    fn setup<R: Rng>(rng: &mut R) -> Self {
-        let BoweHopwoodPedersenCRH {
-            parameters,
-            bowe_hopwood_parameters,
-        } = BoweHopwoodPedersenCRH::<G, NUM_WINDOWS, WINDOW_SIZE>::setup(rng);
-
-        Self {
-            parameters,
-            bowe_hopwood_parameters,
-        }
+    fn setup(message: &str) -> Self {
+        BoweHopwoodPedersenCRH::<G, NUM_WINDOWS, WINDOW_SIZE>::setup(message).into()
     }
 
     fn hash(&self, input: &[u8]) -> Result<Self::Output, CRHError> {
-        let crh = BoweHopwoodPedersenCRH::<G, NUM_WINDOWS, WINDOW_SIZE> {
-            parameters: self.parameters.clone(),
-            bowe_hopwood_parameters: self.bowe_hopwood_parameters.clone(),
-        };
-
-        let output = crh.hash(input)?;
-        let affine = output.into_affine();
+        let affine = self.bhp.hash(input)?;
         debug_assert!(affine.is_in_correct_subgroup_assuming_on_curve());
         Ok(affine.to_x_coordinate())
     }
 
     fn parameters(&self) -> &Self::Parameters {
-        &self.parameters
+        &self.bhp.parameters()
     }
 }
 
-impl<G: Group + ProjectiveCurve, const NUM_WINDOWS: usize, const WINDOW_SIZE: usize>
-    From<PedersenCRHParameters<G, NUM_WINDOWS, WINDOW_SIZE>>
+impl<G: ProjectiveCurve, const NUM_WINDOWS: usize, const WINDOW_SIZE: usize>
+    From<PedersenCRH<G, NUM_WINDOWS, WINDOW_SIZE>> for BoweHopwoodPedersenCompressedCRH<G, NUM_WINDOWS, WINDOW_SIZE>
+{
+    fn from(crh: PedersenCRH<G, NUM_WINDOWS, WINDOW_SIZE>) -> Self {
+        Self { bhp: crh.into() }
+    }
+}
+
+impl<G: ProjectiveCurve, const NUM_WINDOWS: usize, const WINDOW_SIZE: usize>
+    From<BoweHopwoodPedersenCRH<G, NUM_WINDOWS, WINDOW_SIZE>>
     for BoweHopwoodPedersenCompressedCRH<G, NUM_WINDOWS, WINDOW_SIZE>
 {
-    fn from(parameters: PedersenCRHParameters<G, NUM_WINDOWS, WINDOW_SIZE>) -> Self {
-        Self {
-            bowe_hopwood_parameters: BoweHopwoodPedersenCRHParameters::new(),
-            parameters,
-        }
+    fn from(bhp: BoweHopwoodPedersenCRH<G, NUM_WINDOWS, WINDOW_SIZE>) -> Self {
+        Self { bhp }
     }
 }
 
-impl<F: Field, G: Group + ProjectiveCurve + ToConstraintField<F>, const NUM_WINDOWS: usize, const WINDOW_SIZE: usize>
+impl<G: ProjectiveCurve, const NUM_WINDOWS: usize, const WINDOW_SIZE: usize> From<Vec<Vec<G>>>
+    for BoweHopwoodPedersenCompressedCRH<G, NUM_WINDOWS, WINDOW_SIZE>
+{
+    fn from(bases: Vec<Vec<G>>) -> Self {
+        Self { bhp: bases.into() }
+    }
+}
+
+impl<G: ProjectiveCurve, const NUM_WINDOWS: usize, const WINDOW_SIZE: usize> ToBytes
+    for BoweHopwoodPedersenCompressedCRH<G, NUM_WINDOWS, WINDOW_SIZE>
+{
+    fn write_le<W: Write>(&self, writer: W) -> IoResult<()> {
+        self.bhp.write_le(writer)
+    }
+}
+
+impl<G: ProjectiveCurve, const NUM_WINDOWS: usize, const WINDOW_SIZE: usize> FromBytes
+    for BoweHopwoodPedersenCompressedCRH<G, NUM_WINDOWS, WINDOW_SIZE>
+{
+    #[inline]
+    fn read_le<R: Read>(reader: R) -> IoResult<Self> {
+        Ok(BoweHopwoodPedersenCRH::read_le(reader)?.into())
+    }
+}
+
+impl<F: Field, G: ProjectiveCurve + ToConstraintField<F>, const NUM_WINDOWS: usize, const WINDOW_SIZE: usize>
     ToConstraintField<F> for BoweHopwoodPedersenCompressedCRH<G, NUM_WINDOWS, WINDOW_SIZE>
 {
     #[inline]
     fn to_field_elements(&self) -> Result<Vec<F>, ConstraintFieldError> {
-        self.parameters.to_field_elements()
+        self.bhp.to_field_elements()
     }
 }

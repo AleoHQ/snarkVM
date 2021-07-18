@@ -15,7 +15,7 @@
 // along with the snarkVM library. If not, see <https://www.gnu.org/licenses/>.
 
 use crate::traits::Group;
-use snarkvm_fields::{Field, PrimeField, SquareRootField};
+use snarkvm_fields::{Field, PrimeField, SquareRootField, ToConstraintField};
 use snarkvm_utilities::{biginteger::BigInteger, serialize::*, BitIteratorBE, ToBytes};
 
 use std::{fmt::Debug, iter};
@@ -31,7 +31,8 @@ pub trait PairingEngine: Sized + 'static + Copy + Debug + Sync + Send {
     /// The affine representation of an element in G1.
     type G1Affine: AffineCurve<BaseField = Self::Fq, ScalarField = Self::Fr, Projective = Self::G1Projective>
         + PairingCurve<PairWith = Self::G2Affine, PairingResult = Self::Fqk>
-        + From<Self::G1Projective>;
+        + From<Self::G1Projective>
+        + ToConstraintField<Self::Fq>;
 
     /// The projective representation of an element in G2.
     type G2Projective: ProjectiveCurve<BaseField = Self::Fqe, ScalarField = Self::Fr, Affine = Self::G2Affine>
@@ -40,7 +41,8 @@ pub trait PairingEngine: Sized + 'static + Copy + Debug + Sync + Send {
     /// The affine representation of an element in G2.
     type G2Affine: AffineCurve<BaseField = Self::Fqe, ScalarField = Self::Fr, Projective = Self::G2Projective>
         + PairingCurve<PairWith = Self::G1Affine, PairingResult = Self::Fqk>
-        + From<Self::G2Projective>;
+        + From<Self::G2Projective>
+        + ToConstraintField<Self::Fq>;
 
     /// The base field that hosts G1.
     type Fq: PrimeField + SquareRootField;

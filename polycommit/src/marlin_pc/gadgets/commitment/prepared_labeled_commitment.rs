@@ -16,13 +16,9 @@
 
 use snarkvm_curves::PairingEngine;
 use snarkvm_gadgets::{fields::FpGadget, traits::curves::PairingGadget};
-use snarkvm_r1cs::{ConstraintSystem, SynthesisError, ToConstraintField};
+use snarkvm_r1cs::ToConstraintField;
 
-use crate::{
-    marlin_pc::{LabeledCommitmentVar, PreparedCommitmentVar},
-    PrepareGadget,
-    String,
-};
+use crate::{marlin_pc::PreparedCommitmentVar, String};
 
 /// Prepared gadget for a Marlin-KZG10 commitment, with a string label and degree bound.
 pub struct PreparedLabeledCommitmentVar<
@@ -58,31 +54,9 @@ where
     }
 }
 
-impl<TargetCurve, BaseCurve, PG>
-    PrepareGadget<LabeledCommitmentVar<TargetCurve, BaseCurve, PG>, <BaseCurve as PairingEngine>::Fr>
-    for PreparedLabeledCommitmentVar<TargetCurve, BaseCurve, PG>
-where
-    TargetCurve: PairingEngine,
-    BaseCurve: PairingEngine,
-    PG: PairingGadget<TargetCurve, <BaseCurve as PairingEngine>::Fr>,
-    <TargetCurve as PairingEngine>::G1Affine: ToConstraintField<<BaseCurve as PairingEngine>::Fr>,
-    <TargetCurve as PairingEngine>::G2Affine: ToConstraintField<<BaseCurve as PairingEngine>::Fr>,
-{
-    fn prepare<CS: ConstraintSystem<<BaseCurve as PairingEngine>::Fr>>(
-        cs: CS,
-        unprepared: &LabeledCommitmentVar<TargetCurve, BaseCurve, PG>,
-    ) -> Result<Self, SynthesisError> {
-        Ok(Self {
-            label: unprepared.label.clone(),
-            prepared_commitment: PreparedCommitmentVar::prepare(cs, &unprepared.commitment)?,
-            degree_bound: unprepared.degree_bound.clone(),
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use snarkvm_algorithms::fft::DensePolynomial;
+    use snarkvm_algorithms::{fft::DensePolynomial, Prepare};
     use snarkvm_curves::{
         bls12_377::{Bls12_377, Fq, Fr},
         bw6_761::BW6_761,
@@ -91,14 +65,14 @@ mod tests {
     use snarkvm_gadgets::{
         curves::bls12_377::PairingGadget as Bls12_377PairingGadget,
         traits::{alloc::AllocGadget, eq::EqGadget},
+        PrepareGadget,
     };
-    use snarkvm_r1cs::TestConstraintSystem;
+    use snarkvm_r1cs::{ConstraintSystem, TestConstraintSystem};
     use snarkvm_utilities::rand::test_rng;
 
     use crate::{
-        marlin_pc::{MarlinKZG10, PreparedCommitment},
+        marlin_pc::{LabeledCommitmentVar, MarlinKZG10},
         LabeledPolynomial,
-        PCPreparedCommitment,
         PolynomialCommitment,
         ToString,
     };
@@ -133,18 +107,16 @@ mod tests {
         let (commitments, _randomness) = PC::commit(&committer_key, vec![&labeled_polynomial], Some(rng)).unwrap();
 
         for (i, commitment) in commitments.iter().enumerate() {
-            let prepared_commitment = PreparedCommitment::prepare(&commitment.commitment());
+            let prepared_commitment = commitment.commitment().prepare();
             let commitment_gadget =
                 LabeledCommitmentVar::<_, BaseCurve, PG>::alloc(cs.ns(|| format!("commitment_{}", i)), || {
                     Ok(commitment)
                 })
                 .unwrap();
 
-            let prepared_commitment_gadget = PreparedLabeledCommitmentVar::prepare(
-                cs.ns(|| format!("prepare_commitment_{}", i)),
-                &commitment_gadget,
-            )
-            .unwrap();
+            let prepared_commitment_gadget = commitment_gadget
+                .prepare(cs.ns(|| format!("prepare_commitment_{}", i)))
+                .unwrap();
 
             for (j, (comm_element, comm_element_gadget)) in prepared_commitment
                 .prepared_comm

@@ -17,7 +17,6 @@
 use crate::{errors::MerkleError, CRH};
 use snarkvm_utilities::ToBytes;
 
-use rand::Rng;
 use std::io::Cursor;
 
 pub trait MerkleParameters: Send + Sync + Clone + Default {
@@ -26,13 +25,10 @@ pub trait MerkleParameters: Send + Sync + Clone + Default {
     const DEPTH: usize;
 
     /// Setup the MerkleParameters
-    fn setup<R: Rng>(rng: &mut R) -> Self;
+    fn setup(message: &str) -> Self;
 
     /// Returns the collision-resistant hash function used by the Merkle tree.
     fn crh(&self) -> &Self::H;
-
-    /// Returns the collision-resistant hash function parameters used by the Merkle tree.
-    fn parameters(&self) -> &<<Self as MerkleParameters>::H as CRH>::Parameters;
 
     /// Returns the hash of a given leaf.
     fn hash_leaf<L: ToBytes>(&self, leaf: &L, buffer: &mut [u8]) -> Result<<Self::H as CRH>::Output, MerkleError> {
@@ -68,9 +64,10 @@ pub trait MerkleParameters: Send + Sync + Clone + Default {
     }
 }
 
+// TODO (howardwu): TEMPORARY - Deprecate this with a ledger rearchitecture.
 pub trait LoadableMerkleParameters: MerkleParameters + From<<Self as MerkleParameters>::H> {}
 
 pub trait MaskedMerkleParameters: MerkleParameters {
     /// Returns the collision-resistant hash function masking parameters used by the Merkle tree.
-    fn mask_parameters(&self) -> &<<Self as MerkleParameters>::H as CRH>::Parameters;
+    fn mask_parameters(&self) -> &Self::H;
 }

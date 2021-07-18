@@ -17,6 +17,11 @@ include = [ "Cargo.toml", "src", "README.md", "LICENSE.md" ]
 license = "GPL-3.0"
 edition = "2018"
 
+[[bench]]
+name = "noop_program"
+path = "benches/noop_program.rs"
+harness = false
+
 [dependencies.snarkvm-algorithms]
 path = "../algorithms"
 version = "0.7.4"
@@ -111,6 +116,9 @@ version = "0.9"
 
 [dependencies.thiserror]
 version = "1.0"
+
+[dev-dependencies.criterion]
+version = "0.3.4"
 
 [dev-dependencies.rand_chacha]
 version = "0.3"

@@ -21,11 +21,13 @@ use snarkvm_utilities::{
     ToBytes,
 };
 
-use rand::Rng;
+use rand::{CryptoRng, Rng};
 use std::{fmt::Debug, hash::Hash};
 
-pub trait SignatureScheme: Sized + Clone + From<<Self as SignatureScheme>::Parameters> {
-    type Parameters: Clone + Debug + ToBytes + FromBytes + Eq + Send + Sync;
+pub trait SignatureScheme:
+    Sized + ToBytes + FromBytes + Debug + Clone + Eq + Send + Sync + From<<Self as SignatureScheme>::Parameters>
+{
+    type Parameters: Clone + Debug + Eq;
     type PublicKey: Clone
         + Debug
         + Default
@@ -38,19 +40,40 @@ pub trait SignatureScheme: Sized + Clone + From<<Self as SignatureScheme>::Param
         + CanonicalSerialize
         + CanonicalDeserialize;
     type PrivateKey: Clone + Debug + Default + ToBytes + FromBytes + PartialEq + Eq;
+    type RandomizedPrivateKey: Clone + Debug + Default + ToBytes + FromBytes + PartialEq + Eq + Into<Self::PrivateKey>;
+    type Randomizer: Clone + Debug + Default + ToBytes + FromBytes + PartialEq + Eq;
     type Signature: Clone + Debug + Default + ToBytes + FromBytes + Send + Sync + PartialEq + Eq;
 
-    fn setup<R: Rng>(rng: &mut R) -> Result<Self, SignatureError>;
+    fn setup(message: &str) -> Self;
 
     fn parameters(&self) -> &Self::Parameters;
 
-    fn generate_private_key<R: Rng>(&self, rng: &mut R) -> Result<Self::PrivateKey, SignatureError>;
+    fn generate_private_key<R: Rng + CryptoRng>(&self, rng: &mut R) -> Result<Self::PrivateKey, SignatureError>;
 
     fn generate_public_key(&self, private_key: &Self::PrivateKey) -> Result<Self::PublicKey, SignatureError>;
 
-    fn sign<R: Rng>(
+    fn randomize_private_key(
         &self,
         private_key: &Self::PrivateKey,
+        randomizer: &Self::Randomizer,
+    ) -> Result<Self::RandomizedPrivateKey, SignatureError>;
+
+    fn randomize_public_key(
+        &self,
+        public_key: &Self::PublicKey,
+        randomizer: &Self::Randomizer,
+    ) -> Result<Self::PublicKey, SignatureError>;
+
+    fn sign<R: Rng + CryptoRng>(
+        &self,
+        private_key: &Self::PrivateKey,
+        message: &[u8],
+        rng: &mut R,
+    ) -> Result<Self::Signature, SignatureError>;
+
+    fn sign_randomized<R: Rng + CryptoRng>(
+        &self,
+        randomized_private_key: &Self::RandomizedPrivateKey,
         message: &[u8],
         rng: &mut R,
     ) -> Result<Self::Signature, SignatureError>;
@@ -61,16 +84,4 @@ pub trait SignatureScheme: Sized + Clone + From<<Self as SignatureScheme>::Param
         message: &[u8],
         signature: &Self::Signature,
     ) -> Result<bool, SignatureError>;
-
-    fn randomize_public_key(
-        &self,
-        public_key: &Self::PublicKey,
-        randomness: &[u8],
-    ) -> Result<Self::PublicKey, SignatureError>;
-
-    fn randomize_signature(
-        &self,
-        signature: &Self::Signature,
-        randomness: &[u8],
-    ) -> Result<Self::Signature, SignatureError>;
 }

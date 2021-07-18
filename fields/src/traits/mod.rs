@@ -41,5 +41,5 @@ pub use to_constraint_field::*;
 mod zero;
 pub use zero::*;
 
-mod poseidon_mds_field;
-pub use poseidon_mds_field::*;
+mod poseidon_default_parameters;
+pub use poseidon_default_parameters::*;

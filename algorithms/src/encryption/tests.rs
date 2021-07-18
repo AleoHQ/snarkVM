@@ -15,29 +15,25 @@
 // along with the snarkVM library. If not, see <https://www.gnu.org/licenses/>.
 
 use crate::{encryption::GroupEncryption, traits::EncryptionScheme};
-use snarkvm_curves::{
-    edwards_bls12::{EdwardsAffine, EdwardsProjective},
-    traits::{Group, ProjectiveCurve},
-};
+use snarkvm_curves::{edwards_bls12::EdwardsProjective, traits::ProjectiveCurve};
 use snarkvm_utilities::{to_bytes_le, FromBytes, ToBytes};
 
-use blake2::Blake2s;
 use rand::{Rng, SeedableRng};
-use rand_xorshift::XorShiftRng;
+use rand_chacha::ChaChaRng;
 
-type TestEncryptionScheme = GroupEncryption<EdwardsProjective, EdwardsAffine, Blake2s>;
+type TestEncryptionScheme = GroupEncryption<EdwardsProjective>;
 
 pub const ITERATIONS: usize = 1000;
 
-fn generate_input<G: Group + ProjectiveCurve, R: Rng>(input_size: usize, rng: &mut R) -> Vec<G> {
+fn generate_input<G: ProjectiveCurve, R: Rng>(input_size: usize, rng: &mut R) -> Vec<G> {
     (0..input_size).map(|_| G::rand(rng)).collect()
 }
 
 #[test]
 fn simple_encryption() {
-    let rng = &mut XorShiftRng::seed_from_u64(1231275789u64);
+    let rng = &mut ChaChaRng::seed_from_u64(1231275789u64);
 
-    let encryption_scheme = TestEncryptionScheme::setup(rng);
+    let encryption_scheme = TestEncryptionScheme::setup("simple_encryption");
 
     let private_key = encryption_scheme.generate_private_key(rng);
     let public_key = encryption_scheme.generate_public_key(&private_key).unwrap();
@@ -53,9 +49,9 @@ fn simple_encryption() {
 
 #[test]
 fn encryption_public_key_serialization() {
-    let rng = &mut XorShiftRng::seed_from_u64(1231275789u64);
+    let rng = &mut ChaChaRng::seed_from_u64(1231275789u64);
 
-    let encryption_scheme = TestEncryptionScheme::setup(rng);
+    let encryption_scheme = TestEncryptionScheme::setup("encryption_public_key_serialization");
 
     for _ in 0..ITERATIONS {
         let private_key = encryption_scheme.generate_private_key(rng);

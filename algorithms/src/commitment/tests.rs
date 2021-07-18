@@ -19,24 +19,14 @@ use crate::{
     traits::CommitmentScheme,
 };
 use snarkvm_curves::edwards_bls12::EdwardsProjective;
-use snarkvm_utilities::{FromBytes, ToBytes};
-
-use rand::SeedableRng;
-use rand_xorshift::XorShiftRng;
 
 const NUM_WINDOWS: usize = 8;
 const WINDOW_SIZE: usize = 128;
 
 fn commitment_parameters_serialization<C: CommitmentScheme>() {
-    let rng = &mut XorShiftRng::seed_from_u64(1231275789u64);
-    let commitment = C::setup(rng);
-
-    let commitment_parameters_bytes = commitment.parameters().to_bytes_le().unwrap();
-
-    let recovered_commitment_parameters =
-        <C as CommitmentScheme>::Parameters::read_le(&commitment_parameters_bytes[..]).unwrap();
-
-    assert_eq!(commitment.parameters(), &recovered_commitment_parameters);
+    let commitment = C::setup("commitment_parameters_serialization").to_bytes_le().unwrap();
+    let recovered_commitment = C::read_le(&commitment[..]).unwrap();
+    assert_eq!(commitment, recovered_commitment.to_bytes_le().unwrap());
 }
 
 #[test]

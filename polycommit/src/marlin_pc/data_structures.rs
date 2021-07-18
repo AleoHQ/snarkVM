@@ -14,16 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with the snarkVM library. If not, see <https://www.gnu.org/licenses/>.
 
-use crate::{
-    impl_bytes,
-    PCCommitment,
-    PCCommitterKey,
-    PCPreparedCommitment,
-    PCPreparedVerifierKey,
-    PCRandomness,
-    PCVerifierKey,
-    Vec,
-};
+use crate::{impl_bytes, PCCommitment, PCCommitterKey, PCRandomness, PCVerifierKey, Vec};
 use snarkvm_curves::{traits::PairingEngine, Group};
 use snarkvm_fields::{ConstraintFieldError, PrimeField, ToConstraintField};
 use snarkvm_utilities::{error, errors::SerializationError, serialize::*, FromBytes, ToBytes};
@@ -32,6 +23,8 @@ use core::ops::{Add, AddAssign};
 use rand_core::RngCore;
 
 use crate::kzg10;
+use snarkvm_algorithms::Prepare;
+
 /// `UniversalParams` are the universal parameters for the KZG10 scheme.
 pub type UniversalParams<E> = kzg10::UniversalParams<E>;
 
@@ -179,18 +172,18 @@ pub struct PreparedVerifierKey<E: PairingEngine> {
     pub supported_degree: usize,
 }
 
-impl<E: PairingEngine> PCPreparedVerifierKey<VerifierKey<E>> for PreparedVerifierKey<E> {
+impl<E: PairingEngine> Prepare<PreparedVerifierKey<E>> for VerifierKey<E> {
     /// prepare `PreparedVerifierKey` from `VerifierKey`
-    fn prepare(vk: &VerifierKey<E>) -> Self {
-        let prepared_vk = kzg10::PreparedVerifierKey::<E>::prepare(&vk.vk);
+    fn prepare(&self) -> PreparedVerifierKey<E> {
+        let prepared_vk = kzg10::PreparedVerifierKey::<E>::prepare(&self.vk);
 
         let supported_bits = E::Fr::size_in_bits();
 
         let prepared_degree_bounds_and_shift_powers: Option<Vec<(usize, Vec<E::G1Affine>)>> =
-            if vk.degree_bounds_and_shift_powers.is_some() {
+            if self.degree_bounds_and_shift_powers.is_some() {
                 let mut res = Vec::<(usize, Vec<E::G1Affine>)>::new();
 
-                let degree_bounds_and_shift_powers = vk.degree_bounds_and_shift_powers.as_ref().unwrap();
+                let degree_bounds_and_shift_powers = self.degree_bounds_and_shift_powers.as_ref().unwrap();
 
                 for (d, shift_power) in degree_bounds_and_shift_powers {
                     let mut prepared_shift_power = Vec::<E::G1Affine>::new();
@@ -209,11 +202,11 @@ impl<E: PairingEngine> PCPreparedVerifierKey<VerifierKey<E>> for PreparedVerifie
                 None
             };
 
-        Self {
+        PreparedVerifierKey::<E> {
             prepared_vk,
             prepared_degree_bounds_and_shift_powers,
-            max_degree: vk.max_degree,
-            supported_degree: vk.supported_degree,
+            max_degree: self.max_degree,
+            supported_degree: self.supported_degree,
         }
     }
 }
@@ -289,14 +282,14 @@ pub struct PreparedCommitment<E: PairingEngine> {
     pub(crate) shifted_comm: Option<kzg10::Commitment<E>>,
 }
 
-impl<E: PairingEngine> PCPreparedCommitment<Commitment<E>> for PreparedCommitment<E> {
+impl<E: PairingEngine> Prepare<PreparedCommitment<E>> for Commitment<E> {
     /// Prepare commitment to a polynomial that optionally enforces a degree bound.
-    fn prepare(commitment: &Commitment<E>) -> Self {
-        let prepared_commitment = kzg10::PreparedCommitment::<E>::prepare(&commitment.comm);
+    fn prepare(&self) -> PreparedCommitment<E> {
+        let prepared_commitment = kzg10::PreparedCommitment::<E>::prepare(&self.comm);
 
-        let shifted_commitment = commitment.shifted_comm.clone();
+        let shifted_commitment = self.shifted_comm.clone();
 
-        Self {
+        PreparedCommitment::<E> {
             prepared_comm: prepared_commitment,
             shifted_comm: shifted_commitment,
         }

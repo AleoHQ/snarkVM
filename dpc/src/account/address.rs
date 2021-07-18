@@ -38,46 +38,32 @@ pub struct Address<C: DPCComponents> {
 
 impl<C: DPCComponents> Address<C> {
     /// Derives the account address from an account private key.
-    pub fn from_private_key(
-        signature_parameters: &C::AccountSignature,
-        commitment_parameters: &C::AccountCommitment,
-        encryption_parameters: &C::AccountEncryption,
-        private_key: &PrivateKey<C>,
-    ) -> Result<Self, AccountError> {
-        let decryption_key = private_key.to_decryption_key(signature_parameters, commitment_parameters)?;
-        let encryption_key =
-            <C::AccountEncryption as EncryptionScheme>::generate_public_key(encryption_parameters, &decryption_key)?;
-
+    pub fn from_private_key(private_key: &PrivateKey<C>) -> Result<Self, AccountError> {
+        let decryption_key = private_key.to_decryption_key()?;
+        let encryption_key = C::account_encryption().generate_public_key(&decryption_key)?;
         Ok(Self { encryption_key })
     }
 
     /// Derives the account address from an account view key.
-    pub fn from_view_key(
-        encryption_parameters: &C::AccountEncryption,
-        view_key: &ViewKey<C>,
-    ) -> Result<Self, AccountError> {
-        let encryption_key = <C::AccountEncryption as EncryptionScheme>::generate_public_key(
-            encryption_parameters,
-            &view_key.decryption_key,
-        )?;
-
+    pub fn from_view_key(view_key: &ViewKey<C>) -> Result<Self, AccountError> {
+        let encryption_key = C::account_encryption().generate_public_key(&view_key.decryption_key)?;
         Ok(Self { encryption_key })
-    }
-
-    #[allow(clippy::wrong_self_convention)]
-    pub fn into_repr(&self) -> &<C::AccountEncryption as EncryptionScheme>::PublicKey {
-        &self.encryption_key
     }
 
     /// Verifies a signature on a message signed by the account view key.
     /// Returns `true` if the signature is valid. Otherwise, returns `false`.
     pub fn verify_signature(
         &self,
-        encryption_parameters: &C::AccountEncryption,
         message: &[u8],
-        signature: &<C::AccountEncryption as SignatureScheme>::Signature,
+        signature: &<C::AccountSignature as SignatureScheme>::Signature,
     ) -> Result<bool, AccountError> {
-        Ok(encryption_parameters.verify(&self.encryption_key.clone().into(), message, signature)?)
+        let signature_public_key = FromBytes::from_bytes_le(&self.encryption_key.to_bytes_le()?)?;
+        Ok(C::account_signature().verify(&signature_public_key, message, signature)?)
+    }
+
+    #[allow(clippy::wrong_self_convention)]
+    pub fn into_repr(&self) -> &<C::AccountEncryption as EncryptionScheme>::PublicKey {
+        &self.encryption_key
     }
 }
 

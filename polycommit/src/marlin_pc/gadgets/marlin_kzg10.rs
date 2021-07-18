@@ -377,6 +377,16 @@ where
                 <TargetCurve as PairingEngine>::Fr,
                 <BaseCurve as PairingEngine>::Fr,
             >::zero(cs.ns(|| "zero_g_multiplier"))?;
+
+            let mut gamma_g_multiplier = NonNativeFieldMulResultVar::<
+                <TargetCurve as PairingEngine>::Fr,
+                <BaseCurve as PairingEngine>::Fr,
+            >::zero();
+            let mut gamma_g_multiplier_reduced = NonNativeFieldVar::<
+                <TargetCurve as PairingEngine>::Fr,
+                <BaseCurve as PairingEngine>::Fr,
+            >::zero(cs.ns(|| "zero_gamma_g_multiplier"))?;
+
             for (i, (((c, z), v), proof)) in combined_comms
                 .iter()
                 .zip(combined_queries)
@@ -407,6 +417,16 @@ where
                         &randomizer_times_v,
                     )?;
 
+                    if let Some(random_v) = &proof.random_v {
+                        let randomizer_times_random_v = randomizer
+                            .mul_without_reduce(cs.ns(|| format!("mul_without_reduce_{}_random_v", i)), random_v)?;
+
+                        gamma_g_multiplier = gamma_g_multiplier.add(
+                            &mut cs.ns(|| format!("gamma_g_multiplier_plus_randomizer_times_random_v_{}", i)),
+                            &randomizer_times_random_v,
+                        )?;
+                    }
+
                     let c_times_randomizer = c_plus_w_times_z.mul_bits(
                         cs.ns(|| format!("c_plus_w_times_z_mul_bits{}", i)),
                         &zero,
@@ -429,6 +449,12 @@ where
                 } else {
                     g_multiplier_reduced =
                         g_multiplier_reduced.add(&mut cs.ns(|| format!("g_multiplier_reduced_plus_v_{}", i)), &v)?;
+                    if let Some(random_v) = &proof.random_v {
+                        gamma_g_multiplier_reduced = gamma_g_multiplier_reduced.add(
+                            &mut cs.ns(|| format!("gamma_g_multiplier_plus_randomizer_times_random_v_{}", i)),
+                            &random_v,
+                        )?;
+                    }
                     total_c = total_c.add(
                         &mut cs.ns(|| format!("total_c_plus_c_plus_w_times_z_{}", i)),
                         &c_plus_w_times_z,
@@ -442,6 +468,13 @@ where
                 let reduced = g_multiplier.reduce(&mut cs.ns(|| "g_multiplier_reduce_sum"))?;
                 let g_multiplier_reduced = g_multiplier_reduced.add(&mut cs.ns(|| "g_multiplier_reduce"), &reduced)?;
                 let g_multiplier_bits = g_multiplier_reduced.to_bits_le(&mut cs.ns(|| "g_multiplier_to_bits_le"))?;
+
+                let gamma_g_multiplier_reduced = {
+                    let reduced = gamma_g_multiplier.reduce(&mut cs.ns(|| "gamma_g_multiplier_reduce_sum"))?;
+                    gamma_g_multiplier_reduced.add(&mut cs.ns(|| "gamma_g_multiplier_reduce"), &reduced)?
+                };
+                let gamma_g_multiplier_bits =
+                    gamma_g_multiplier_reduced.to_bits_le(&mut cs.ns(|| "gamma_g_multiplier_to_bits_le"))?;
 
                 let mut g_times_mul = PG::G1Gadget::zero(cs.ns(|| "g_times_mul_zero"))?;
                 {
@@ -463,7 +496,30 @@ where
                     }
                 }
 
+                let mut gamma_g_times_mul = PG::G1Gadget::zero(cs.ns(|| "gamma_g_times_mul_zero"))?;
+                {
+                    for (i, (bit, base_power)) in gamma_g_multiplier_bits
+                        .iter()
+                        .zip(&prepared_verification_key.prepared_gamma_g)
+                        .enumerate()
+                    {
+                        let mut new_encoded = gamma_g_times_mul.clone();
+                        new_encoded = new_encoded.add(
+                            cs.ns(|| format!("new_encoded_plus_base_power_{}_gamma_g", i)),
+                            base_power,
+                        )?;
+
+                        gamma_g_times_mul = PG::G1Gadget::conditionally_select(
+                            cs.ns(|| format!("gamma_g_times_mul_cond_select_{}", i)),
+                            bit,
+                            &new_encoded,
+                            &gamma_g_times_mul,
+                        )?;
+                    }
+                }
+
                 total_c = total_c.sub(&mut cs.ns(|| "total_c_minus_g_times_mul"), &g_times_mul)?;
+                total_c = total_c.sub(&mut cs.ns(|| "total_c_minus_gamma_g_times_mul"), &gamma_g_times_mul)?;
                 total_w = total_w.negate(cs.ns(|| "total_w_negate"))?;
 
                 let prepared_total_w = PG::prepare_g1(cs.ns(|| "prepared_total_w"), total_w)?;

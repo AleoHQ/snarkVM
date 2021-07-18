@@ -21,30 +21,21 @@ use snarkvm_algorithms::{crh::pedersen::PedersenCRH, traits::CRH};
 use snarkvm_curves::edwards_bls12::EdwardsProjective;
 
 use criterion::Criterion;
-use rand::{
-    thread_rng,
-    {self},
-};
 
 const NUM_WINDOWS: usize = 8;
 const WINDOW_SIZE: usize = 32;
 
 fn pedersen_crh_setup(c: &mut Criterion) {
-    let rng = &mut thread_rng();
-
-    c.bench_function("Pedersen Commitment Setup", move |b| {
-        b.iter(|| <PedersenCRH<EdwardsProjective, NUM_WINDOWS, WINDOW_SIZE> as CRH>::setup(rng))
+    c.bench_function("Pedersen CRH Setup", move |b| {
+        b.iter(|| <PedersenCRH<EdwardsProjective, NUM_WINDOWS, WINDOW_SIZE> as CRH>::setup("pedersen_crh_benchmark"))
     });
 }
 
 fn pedersen_crh_hash(c: &mut Criterion) {
-    let rng = &mut thread_rng();
-    let parameters = <PedersenCRH<EdwardsProjective, NUM_WINDOWS, WINDOW_SIZE> as CRH>::setup(rng);
+    let crh = <PedersenCRH<EdwardsProjective, NUM_WINDOWS, WINDOW_SIZE> as CRH>::setup("pedersen_crh_benchmark");
     let input = vec![127u8; 32];
 
-    c.bench_function("Pedersen Commitment Evaluation", move |b| {
-        b.iter(|| <PedersenCRH<EdwardsProjective, NUM_WINDOWS, WINDOW_SIZE> as CRH>::hash(&parameters, &input).unwrap())
-    });
+    c.bench_function("Pedersen CRH Evaluation", move |b| b.iter(|| crh.hash(&input).unwrap()));
 }
 
 criterion_group! {

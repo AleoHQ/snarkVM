@@ -20,7 +20,7 @@ use snarkvm_curves::{
     templates::twisted_edwards_extended::Affine as TEAffine,
     traits::{MontgomeryParameters, TwistedEdwardsParameters},
 };
-use snarkvm_fields::Field;
+use snarkvm_fields::{Field, PrimeField};
 use snarkvm_r1cs::{errors::SynthesisError, ConstraintSystem, Namespace};
 use snarkvm_utilities::bititerator::BitIteratorBE;
 
@@ -29,11 +29,13 @@ use crate::{
     integers::uint::UInt8,
     traits::{
         alloc::AllocGadget,
-        curves::{CompressedGroupGadget, GroupGadget},
+        curves::{CompressedGroupGadget, CurveGadget, GroupGadget},
         eq::{ConditionalEqGadget, EqGadget, NEqGadget},
         fields::FieldGadget,
         select::CondSelectGadget,
     },
+    FpGadget,
+    ToConstraintFieldGadget,
 };
 
 #[cfg(test)]
@@ -453,6 +455,50 @@ mod affine_impl {
     where
         Self: GroupGadget<TEAffine<P>, F>,
     {
+        fn alloc_constant<
+            Fn: FnOnce() -> Result<T, SynthesisError>,
+            T: Borrow<TEAffine<P>>,
+            CS: ConstraintSystem<F>,
+        >(
+            mut cs: CS,
+            value_gen: Fn,
+        ) -> Result<Self, SynthesisError> {
+            let (x, y) = match value_gen() {
+                Ok(ge) => {
+                    let ge = *ge.borrow();
+                    (Ok(ge.x), Ok(ge.y))
+                }
+                _ => (
+                    Err(SynthesisError::AssignmentMissing),
+                    Err(SynthesisError::AssignmentMissing),
+                ),
+            };
+
+            let d = P::COEFF_D;
+            let a = P::COEFF_A;
+
+            let x = FG::alloc_constant(&mut cs.ns(|| "x"), || x)?;
+            let y = FG::alloc_constant(&mut cs.ns(|| "y"), || y)?;
+
+            // Check that ax^2 + y^2 = 1 + dx^2y^2
+            // We do this by checking that ax^2 - 1 = y^2 * (dx^2 - 1)
+            let x2 = x.square(&mut cs.ns(|| "x^2"))?;
+            let y2 = y.square(&mut cs.ns(|| "y^2"))?;
+
+            let one = P::BaseField::one();
+            let d_x2_minus_one = x2
+                .mul_by_constant(cs.ns(|| "d * x^2"), &d)?
+                .add_constant(cs.ns(|| "d * x^2 - 1"), &one.neg())?;
+
+            let a_x2_minus_one = x2
+                .mul_by_constant(cs.ns(|| "a * x^2"), &a)?
+                .add_constant(cs.ns(|| "a * x^2 - 1"), &one.neg())?;
+
+            d_x2_minus_one.mul_equals(cs.ns(|| "on curve check"), &y2, &a_x2_minus_one)?;
+
+            Ok(Self::new(x, y))
+        }
+
         fn alloc<Fn: FnOnce() -> Result<T, SynthesisError>, T: Borrow<TEAffine<P>>, CS: ConstraintSystem<F>>(
             mut cs: CS,
             value_gen: Fn,
@@ -1072,6 +1118,11 @@ mod projective_impl {
         }
     }
 
+    impl<P: TwistedEdwardsParameters, F: Field, FG: FieldGadget<P::BaseField, F>> CurveGadget<TEProjective<P>, F>
+        for AffineGadget<P, F, FG>
+    {
+    }
+
     impl<P: TwistedEdwardsParameters, F: Field, FG: FieldGadget<P::BaseField, F>>
         CompressedGroupGadget<TEProjective<P>, F> for AffineGadget<P, F, FG>
     {
@@ -1087,6 +1138,47 @@ mod projective_impl {
     where
         Self: GroupGadget<TEProjective<P>, F>,
     {
+        fn alloc_constant<FN, T, CS: ConstraintSystem<F>>(mut cs: CS, value_gen: FN) -> Result<Self, SynthesisError>
+        where
+            FN: FnOnce() -> Result<T, SynthesisError>,
+            T: Borrow<TEProjective<P>>,
+        {
+            let (x, y) = match value_gen() {
+                Ok(ge) => {
+                    let ge = ge.borrow().into_affine();
+                    (Ok(ge.x), Ok(ge.y))
+                }
+                _ => (
+                    Err(SynthesisError::AssignmentMissing),
+                    Err(SynthesisError::AssignmentMissing),
+                ),
+            };
+
+            let d = P::COEFF_D;
+            let a = P::COEFF_A;
+
+            let x = FG::alloc_constant(&mut cs.ns(|| "x"), || x)?;
+            let y = FG::alloc_constant(&mut cs.ns(|| "y"), || y)?;
+
+            // Check that ax^2 + y^2 = 1 + dx^2y^2
+            // We do this by checking that ax^2 - 1 = y^2 * (dx^2 - 1)
+            let x2 = x.square(&mut cs.ns(|| "x^2"))?;
+            let y2 = y.square(&mut cs.ns(|| "y^2"))?;
+
+            let one = P::BaseField::one();
+            let d_x2_minus_one = x2
+                .mul_by_constant(cs.ns(|| "d * x^2"), &d)?
+                .add_constant(cs.ns(|| "d * x^2 - 1"), &one.neg())?;
+
+            let a_x2_minus_one = x2
+                .mul_by_constant(cs.ns(|| "a * x^2"), &a)?
+                .add_constant(cs.ns(|| "a * x^2 - 1"), &one.neg())?;
+
+            d_x2_minus_one.mul_equals(cs.ns(|| "on curve check"), &y2, &a_x2_minus_one)?;
+
+            Ok(Self::new(x, y))
+        }
+
         fn alloc<FN, T, CS: ConstraintSystem<F>>(mut cs: CS, value_gen: FN) -> Result<Self, SynthesisError>
         where
             FN: FnOnce() -> Result<T, SynthesisError>,
@@ -1235,6 +1327,7 @@ mod projective_impl {
                 .add_constant(cs.ns(|| "a * x^2 - 1"), &one.neg())?;
 
             d_x2_minus_one.mul_equals(cs.ns(|| "on curve check"), &y2, &a_x2_minus_one)?;
+
             Ok(Self::new(x, y))
         }
     }
@@ -1261,7 +1354,13 @@ impl<P: TwistedEdwardsParameters, F: Field, FG: FieldGadget<P::BaseField, F>> Co
     }
 }
 
-impl<P: TwistedEdwardsParameters, F: Field, FG: FieldGadget<P::BaseField, F>> EqGadget<F> for AffineGadget<P, F, FG> {}
+impl<P: TwistedEdwardsParameters, F: Field, FG: FieldGadget<P::BaseField, F>> EqGadget<F> for AffineGadget<P, F, FG> {
+    fn is_eq<CS: ConstraintSystem<F>>(&self, mut cs: CS, other: &Self) -> Result<Boolean, SynthesisError> {
+        let x = self.x.is_eq(cs.ns(|| "x_is_eq"), &other.x)?;
+        let y = self.y.is_eq(cs.ns(|| "y_is_eq"), &other.y)?;
+        Boolean::and(cs.ns(|| "x_and_y"), &x, &y)
+    }
+}
 
 impl<P: TwistedEdwardsParameters, F: Field, FG: FieldGadget<P::BaseField, F>> ConditionalEqGadget<F>
     for AffineGadget<P, F, FG>
@@ -1335,5 +1434,17 @@ impl<P: TwistedEdwardsParameters, F: Field, FG: FieldGadget<P::BaseField, F>> To
         x_bytes.extend_from_slice(&y_bytes);
 
         Ok(x_bytes)
+    }
+}
+
+impl<P: TwistedEdwardsParameters, F: PrimeField> ToConstraintFieldGadget<F> for AffineGadget<P, F, FpGadget<F>>
+where
+    P: TwistedEdwardsParameters<BaseField = F>,
+{
+    fn to_constraint_field<CS: ConstraintSystem<F>>(&self, mut cs: CS) -> Result<Vec<FpGadget<F>>, SynthesisError> {
+        let mut res = Vec::new();
+        res.extend_from_slice(&self.x.to_constraint_field(cs.ns(|| "x_to_constraint_field"))?);
+        res.extend_from_slice(&self.y.to_constraint_field(cs.ns(|| "y_to_constraint_field"))?);
+        Ok(res)
     }
 }

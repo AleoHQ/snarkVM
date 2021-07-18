@@ -32,6 +32,9 @@ pub enum CommitmentError {
 
     #[error("{}", _0)]
     Message(String),
+
+    #[error("Unable to hash to curve on message: {}", _0)]
+    UnableToHashToCurve(String),
 }
 
 impl From<crate::CRHError> for CommitmentError {

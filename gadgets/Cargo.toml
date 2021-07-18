@@ -101,7 +101,7 @@ default = [
   "snarkvm-curves/default",
   "snarkvm-fields/default",
   "snarkvm-r1cs/default",
-  "snarkvm-utilities/default"
+  "snarkvm-utilities/default",
 ]
 full = [ "algorithms", "curves", "nonnative" ]
 algorithms = [ ]

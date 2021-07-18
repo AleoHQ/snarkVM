@@ -15,38 +15,75 @@
 // along with the snarkVM library. If not, see <https://www.gnu.org/licenses/>.
 
 use crate::{
-    algorithms::crh::pedersen::PedersenCRHParametersGadget,
+    algorithms::crh::pedersen::PedersenCRHGadget,
     bits::Boolean,
     integers::uint::UInt8,
-    traits::{
-        algorithms::CRHGadget,
-        curves::{CompressedGroupGadget, GroupGadget},
-        integers::integer::Integer,
-    },
+    traits::{algorithms::CRHGadget, alloc::AllocGadget, curves::CurveGadget, integers::Integer},
 };
-use snarkvm_algorithms::crh::{BoweHopwoodPedersenCRH, BoweHopwoodPedersenCompressedCRH, BOWE_HOPWOOD_CHUNK_SIZE};
-use snarkvm_curves::traits::{Group, ProjectiveCurve};
-use snarkvm_fields::Field;
+use snarkvm_algorithms::{
+    crh::{BoweHopwoodPedersenCRH, PedersenCRH, BOWE_HOPWOOD_CHUNK_SIZE},
+    CRH,
+};
+use snarkvm_curves::ProjectiveCurve;
+use snarkvm_fields::PrimeField;
 use snarkvm_r1cs::{errors::SynthesisError, ConstraintSystem};
 
-use std::marker::PhantomData;
+use std::borrow::Borrow;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct BoweHopwoodPedersenCRHGadget<G: Group, F: Field, GG: GroupGadget<G, F>> {
-    _group: PhantomData<*const G>,
-    _group_gadget: PhantomData<*const GG>,
-    _engine: PhantomData<F>,
+pub struct BoweHopwoodPedersenCRHGadget<
+    G: ProjectiveCurve,
+    F: PrimeField,
+    GG: CurveGadget<G, F>,
+    const NUM_WINDOWS: usize,
+    const WINDOW_SIZE: usize,
+> {
+    crh_gadget: PedersenCRHGadget<G, F, GG, NUM_WINDOWS, WINDOW_SIZE>,
 }
 
-impl<F: Field, G: Group, GG: GroupGadget<G, F>, const NUM_WINDOWS: usize, const WINDOW_SIZE: usize>
-    CRHGadget<BoweHopwoodPedersenCRH<G, NUM_WINDOWS, WINDOW_SIZE>, F> for BoweHopwoodPedersenCRHGadget<G, F, GG>
+// TODO (howardwu): This should be only `alloc_constant`. This is unsafe convention.
+impl<G: ProjectiveCurve, F: PrimeField, GG: CurveGadget<G, F>, const NUM_WINDOWS: usize, const WINDOW_SIZE: usize>
+    AllocGadget<BoweHopwoodPedersenCRH<G, NUM_WINDOWS, WINDOW_SIZE>, F>
+    for BoweHopwoodPedersenCRHGadget<G, F, GG, NUM_WINDOWS, WINDOW_SIZE>
+{
+    fn alloc<
+        Fn: FnOnce() -> Result<T, SynthesisError>,
+        T: Borrow<BoweHopwoodPedersenCRH<G, NUM_WINDOWS, WINDOW_SIZE>>,
+        CS: ConstraintSystem<F>,
+    >(
+        cs: CS,
+        value_gen: Fn,
+    ) -> Result<Self, SynthesisError> {
+        let crh: PedersenCRH<G, NUM_WINDOWS, WINDOW_SIZE> = value_gen()?.borrow().parameters().clone().into();
+        Ok(Self {
+            crh_gadget: PedersenCRHGadget::alloc(cs, || Ok(crh))?,
+        })
+    }
+
+    fn alloc_input<
+        Fn: FnOnce() -> Result<T, SynthesisError>,
+        T: Borrow<BoweHopwoodPedersenCRH<G, NUM_WINDOWS, WINDOW_SIZE>>,
+        CS: ConstraintSystem<F>,
+    >(
+        cs: CS,
+        value_gen: Fn,
+    ) -> Result<Self, SynthesisError> {
+        let crh: PedersenCRH<G, NUM_WINDOWS, WINDOW_SIZE> = value_gen()?.borrow().parameters().clone().into();
+        Ok(Self {
+            crh_gadget: PedersenCRHGadget::alloc_input(cs, || Ok(crh))?,
+        })
+    }
+}
+
+impl<F: PrimeField, G: ProjectiveCurve, GG: CurveGadget<G, F>, const NUM_WINDOWS: usize, const WINDOW_SIZE: usize>
+    CRHGadget<BoweHopwoodPedersenCRH<G, NUM_WINDOWS, WINDOW_SIZE>, F>
+    for BoweHopwoodPedersenCRHGadget<G, F, GG, NUM_WINDOWS, WINDOW_SIZE>
 {
     type OutputGadget = GG;
-    type ParametersGadget = PedersenCRHParametersGadget<G, F, GG, NUM_WINDOWS, WINDOW_SIZE>;
 
     fn check_evaluation_gadget<CS: ConstraintSystem<F>>(
+        &self,
         cs: CS,
-        parameters: &Self::ParametersGadget,
         input: Vec<UInt8>,
     ) -> Result<Self::OutputGadget, SynthesisError> {
         // Pad the input bytes
@@ -65,8 +102,8 @@ impl<F: Field, G: Group, GG: GroupGadget<G, F>, const NUM_WINDOWS: usize, const 
             input_in_bits.resize(target_length, Boolean::constant(false));
         }
         assert!(input_in_bits.len() % BOWE_HOPWOOD_CHUNK_SIZE == 0);
-        assert_eq!(parameters.parameters.bases.len(), NUM_WINDOWS);
-        for generators in parameters.parameters.bases.iter() {
+        assert_eq!(self.crh_gadget.crh.bases.len(), NUM_WINDOWS);
+        for generators in self.crh_gadget.crh.bases.iter() {
             assert_eq!(generators.len(), WINDOW_SIZE);
         }
 
@@ -75,38 +112,8 @@ impl<F: Field, G: Group, GG: GroupGadget<G, F>, const NUM_WINDOWS: usize, const 
             .chunks(WINDOW_SIZE * BOWE_HOPWOOD_CHUNK_SIZE)
             .map(|x| x.chunks(BOWE_HOPWOOD_CHUNK_SIZE));
 
-        let result = GG::three_bit_signed_digit_scalar_multiplication(cs, &parameters.parameters.bases, input_in_bits)?;
+        let result = GG::three_bit_signed_digit_scalar_multiplication(cs, &self.crh_gadget.crh.bases, input_in_bits)?;
 
         Ok(result)
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct BoweHopwoodPedersenCompressedCRHGadget<G: Group + ProjectiveCurve, F: Field, GG: CompressedGroupGadget<G, F>>
-{
-    _group: PhantomData<*const G>,
-    _group_gadget: PhantomData<*const GG>,
-    _engine: PhantomData<F>,
-}
-
-impl<
-    F: Field,
-    G: Group + ProjectiveCurve,
-    GG: CompressedGroupGadget<G, F>,
-    const NUM_WINDOWS: usize,
-    const WINDOW_SIZE: usize,
-> CRHGadget<BoweHopwoodPedersenCompressedCRH<G, NUM_WINDOWS, WINDOW_SIZE>, F>
-    for BoweHopwoodPedersenCompressedCRHGadget<G, F, GG>
-{
-    type OutputGadget = GG::BaseFieldGadget;
-    type ParametersGadget = PedersenCRHParametersGadget<G, F, GG, NUM_WINDOWS, WINDOW_SIZE>;
-
-    fn check_evaluation_gadget<CS: ConstraintSystem<F>>(
-        cs: CS,
-        parameters: &Self::ParametersGadget,
-        input: Vec<UInt8>,
-    ) -> Result<Self::OutputGadget, SynthesisError> {
-        let output = BoweHopwoodPedersenCRHGadget::<G, F, GG>::check_evaluation_gadget(cs, parameters, input)?;
-        Ok(output.to_x_coordinate())
     }
 }

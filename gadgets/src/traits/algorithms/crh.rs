@@ -17,7 +17,7 @@
 use std::fmt::Debug;
 
 use snarkvm_algorithms::traits::CRH;
-use snarkvm_fields::{Field, PrimeField};
+use snarkvm_fields::PrimeField;
 use snarkvm_r1cs::{errors::SynthesisError, ConstraintSystem};
 
 use crate::{
@@ -29,10 +29,10 @@ use crate::{
         integers::Integer,
         select::CondSelectGadget,
     },
+    FpGadget,
 };
 
-pub trait CRHGadget<H: CRH, F: Field>: Sized + Clone {
-    type ParametersGadget: AllocGadget<H::Parameters, F> + Clone;
+pub trait CRHGadget<H: CRH, F: PrimeField>: AllocGadget<H, F> + Sized + Clone {
     type OutputGadget: ConditionalEqGadget<F>
         + EqGadget<F>
         + ToBytesGadget<F>
@@ -43,13 +43,35 @@ pub trait CRHGadget<H: CRH, F: Field>: Sized + Clone {
         + Sized;
 
     fn check_evaluation_gadget<CS: ConstraintSystem<F>>(
+        &self,
         cs: CS,
-        parameters: &Self::ParametersGadget,
         input: Vec<UInt8>,
     ) -> Result<Self::OutputGadget, SynthesisError>;
+
+    fn check_evaluation_gadget_on_field_elements<CS: ConstraintSystem<F>>(
+        &self,
+        mut cs: CS,
+        input: Vec<FpGadget<F>>,
+    ) -> Result<Self::OutputGadget, SynthesisError> {
+        let mut input_bytes = vec![];
+        for (i, elem) in input.iter().enumerate() {
+            input_bytes.append(&mut elem.to_bytes(cs.ns(|| format!("convert_to_bytes_{}", i)))?);
+        }
+        self.check_evaluation_gadget(cs.ns(|| "crh"), input_bytes)
+    }
 }
 
 pub trait MaskedCRHGadget<H: CRH, F: PrimeField>: CRHGadget<H, F> {
+    type MaskParametersGadget: AllocGadget<H, F> + Clone;
+
+    fn check_evaluation_gadget_masked<CS: ConstraintSystem<F>>(
+        &self,
+        cs: CS,
+        input: Vec<UInt8>,
+        mask_parameters: &Self::MaskParametersGadget,
+        mask: Vec<UInt8>,
+    ) -> Result<Self::OutputGadget, SynthesisError>;
+
     /// Extends the mask such that 0 => 01, 1 => 10.
     fn extend_mask<CS: ConstraintSystem<F>>(_: CS, mask: &[UInt8]) -> Result<Vec<UInt8>, SynthesisError> {
         let extended_mask = mask
@@ -67,12 +89,4 @@ pub trait MaskedCRHGadget<H: CRH, F: PrimeField>: CRHGadget<H, F> {
 
         Ok(extended_mask)
     }
-
-    fn check_evaluation_gadget_masked<CS: ConstraintSystem<F>>(
-        cs: CS,
-        parameters: &Self::ParametersGadget,
-        input: Vec<UInt8>,
-        mask_parameters: &Self::ParametersGadget,
-        mask: Vec<UInt8>,
-    ) -> Result<Self::OutputGadget, SynthesisError>;
 }

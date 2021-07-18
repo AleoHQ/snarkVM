@@ -47,8 +47,10 @@ mod verifier;
 #[cfg(test)]
 mod tests;
 
+use crate::Prepare;
 pub use generator::*;
 pub use prover::*;
+use snarkvm_fields::{ConstraintFieldError, ToConstraintField};
 pub use verifier::*;
 
 /// A proof in the GM17 SNARK.
@@ -227,6 +229,22 @@ impl<E: PairingEngine> PartialEq for VerifyingKey<E> {
     }
 }
 
+impl<E: PairingEngine> ToConstraintField<E::Fq> for VerifyingKey<E> {
+    fn to_field_elements(&self) -> Result<Vec<E::Fq>, ConstraintFieldError> {
+        let mut res = vec![];
+        res.append(&mut self.h_g2.to_field_elements()?);
+        res.append(&mut self.g_alpha_g1.to_field_elements()?);
+        res.append(&mut self.h_beta_g2.to_field_elements()?);
+        res.append(&mut self.g_gamma_g1.to_field_elements()?);
+        res.append(&mut self.h_gamma_g2.to_field_elements()?);
+        for elem in self.query.iter() {
+            res.append(&mut elem.to_field_elements()?);
+        }
+
+        Ok(res)
+    }
+}
+
 impl<E: PairingEngine> VerifyingKey<E> {
     /// Deserialize the verifying key from bytes.
     pub fn read<R: Read>(mut reader: R) -> IoResult<Self> {
@@ -251,6 +269,12 @@ impl<E: PairingEngine> VerifyingKey<E> {
             h_gamma_g2,
             query,
         })
+    }
+}
+
+impl<E: PairingEngine> Prepare<PreparedVerifyingKey<E>> for VerifyingKey<E> {
+    fn prepare(&self) -> PreparedVerifyingKey<E> {
+        prepare_verifying_key(self.clone())
     }
 }
 

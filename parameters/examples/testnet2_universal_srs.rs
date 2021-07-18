@@ -14,6 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with the snarkVM library. If not, see <https://www.gnu.org/licenses/>.
 
+use snarkvm_algorithms::crh::sha256::sha256;
 use snarkvm_dpc::{
     errors::DPCError,
     testnet2::{instantiated::Components, ProgramSNARKUniversalSRS, Testnet2Components},
@@ -44,10 +45,18 @@ where
     Ok(universal_srs_bytes)
 }
 
+fn versioned_filename(checksum: &str) -> String {
+    match checksum.get(0..7) {
+        Some(sum) => format!("universal_srs-{}.params", sum),
+        _ => "universal_srs.params".to_string(),
+    }
+}
+
 pub fn main() {
     let universal_srs = setup::<Components>().unwrap();
+    let universal_srs_checksum = hex::encode(sha256(&universal_srs));
     store(
-        &PathBuf::from("universal_srs.params"),
+        &PathBuf::from(&versioned_filename(&universal_srs_checksum)),
         &PathBuf::from("universal_srs.checksum"),
         &universal_srs,
     )

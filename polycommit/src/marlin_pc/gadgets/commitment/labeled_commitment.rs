@@ -20,11 +20,12 @@ use snarkvm_curves::PairingEngine;
 use snarkvm_gadgets::{
     fields::FpGadget,
     traits::{alloc::AllocGadget, curves::PairingGadget},
+    PrepareGadget,
 };
 use snarkvm_r1cs::{ConstraintSystem, SynthesisError, ToConstraintField};
 
 use crate::{
-    marlin_pc::{Commitment, CommitmentVar},
+    marlin_pc::{Commitment, CommitmentVar, PreparedLabeledCommitmentVar},
     LabeledCommitment,
     String,
     ToString,
@@ -176,6 +177,28 @@ where
                 commitment,
                 degree_bound,
             })
+        })
+    }
+}
+
+impl<TargetCurve, BaseCurve, PG>
+    PrepareGadget<PreparedLabeledCommitmentVar<TargetCurve, BaseCurve, PG>, <BaseCurve as PairingEngine>::Fr>
+    for LabeledCommitmentVar<TargetCurve, BaseCurve, PG>
+where
+    TargetCurve: PairingEngine,
+    BaseCurve: PairingEngine,
+    PG: PairingGadget<TargetCurve, <BaseCurve as PairingEngine>::Fr>,
+    <TargetCurve as PairingEngine>::G1Affine: ToConstraintField<<BaseCurve as PairingEngine>::Fr>,
+    <TargetCurve as PairingEngine>::G2Affine: ToConstraintField<<BaseCurve as PairingEngine>::Fr>,
+{
+    fn prepare<CS: ConstraintSystem<<BaseCurve as PairingEngine>::Fr>>(
+        &self,
+        cs: CS,
+    ) -> Result<PreparedLabeledCommitmentVar<TargetCurve, BaseCurve, PG>, SynthesisError> {
+        Ok(PreparedLabeledCommitmentVar::<TargetCurve, BaseCurve, PG> {
+            label: self.label.clone(),
+            prepared_commitment: self.commitment.prepare(cs)?,
+            degree_bound: self.degree_bound.clone(),
         })
     }
 }

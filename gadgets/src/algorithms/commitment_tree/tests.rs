@@ -24,7 +24,7 @@ use snarkvm_algorithms::{
     traits::{CommitmentScheme, CRH},
 };
 use snarkvm_curves::{bls12_377::Fr, edwards_bls12::EdwardsProjective as EdwardsBls};
-use snarkvm_fields::Field;
+use snarkvm_fields::PrimeField;
 use snarkvm_r1cs::{ConstraintSystem, TestConstraintSystem};
 use snarkvm_utilities::rand::UniformRand;
 
@@ -48,10 +48,17 @@ const COMMITMENT_NUM_WINDOWS: usize = 8;
 const COMMITMENT_WINDOW_SIZE: usize = 32;
 
 pub type H = BoweHopwoodPedersenCompressedCRH<EdwardsBls, CRH_NUM_WINDOWS, CRH_WINDOW_SIZE>;
-pub type HG = BoweHopwoodPedersenCompressedCRHGadget<EdwardsBls, Fr, EdwardsBls12Gadget>;
+pub type HG =
+    BoweHopwoodPedersenCompressedCRHGadget<EdwardsBls, Fr, EdwardsBls12Gadget, CRH_NUM_WINDOWS, CRH_WINDOW_SIZE>;
 
 pub type C = PedersenCompressedCommitment<EdwardsBls, COMMITMENT_NUM_WINDOWS, COMMITMENT_WINDOW_SIZE>;
-pub type CG = PedersenCompressedCommitmentGadget<EdwardsBls, Fr, EdwardsBls12Gadget>;
+pub type CG = PedersenCompressedCommitmentGadget<
+    EdwardsBls,
+    Fr,
+    EdwardsBls12Gadget,
+    COMMITMENT_NUM_WINDOWS,
+    COMMITMENT_WINDOW_SIZE,
+>;
 
 /// Generates a valid Merkle tree and verifies the Merkle path witness for each leaf.
 fn generate_merkle_tree<C: CommitmentScheme, H: CRH, R: Rng>(
@@ -77,14 +84,15 @@ fn commitment_tree_test<
     H: CRH,
     CG: CommitmentGadget<C, F>,
     HG: CRHGadget<H, F>,
-    F: Field,
+    F: PrimeField,
     R: Rng,
 >(
     use_bad_root: bool,
+    setup_message: &str,
     rng: &mut R,
 ) {
-    let commitment = C::setup(rng);
-    let crh = H::setup(rng);
+    let commitment = C::setup(&format!("{} for commitment", setup_message));
+    let crh = H::setup(&format!("{} for crh", setup_message));
 
     let merkle_tree = generate_merkle_tree(&commitment, &crh, rng);
 
@@ -111,12 +119,8 @@ fn commitment_tree_test<
         println!("constraints from root: {}", cs.num_constraints() - num_constraints);
         num_constraints = cs.num_constraints();
 
-        // Allocate Parameters for CRH
-        let crh_parameters = <HG as CRHGadget<_, _>>::ParametersGadget::alloc(
-            &mut cs.ns(|| format!("new_crh_parameters_{}", i)),
-            || Ok(crh.parameters()),
-        )
-        .unwrap();
+        // Allocate CRH
+        let crh_parameters = HG::alloc(&mut cs.ns(|| format!("new_crh_parameters_{}", i)), || Ok(crh.clone())).unwrap();
 
         println!(
             "constraints from crh parameters: {}",
@@ -169,7 +173,7 @@ fn commitment_tree_test<
 fn commitment_tree_good_root_test() {
     let rng = &mut XorShiftRng::seed_from_u64(1231275789u64);
 
-    commitment_tree_test::<C, H, CG, HG, _, _>(false, rng);
+    commitment_tree_test::<C, H, CG, HG, _, _>(false, "commitment_tree_good_root_test", rng);
 }
 
 #[should_panic]
@@ -177,5 +181,5 @@ fn commitment_tree_good_root_test() {
 fn commitment_tree_bad_root_test() {
     let rng = &mut XorShiftRng::seed_from_u64(1231275789u64);
 
-    commitment_tree_test::<C, H, CG, HG, _, _>(true, rng);
+    commitment_tree_test::<C, H, CG, HG, _, _>(true, "commitment_tree_bad_root_test", rng);
 }

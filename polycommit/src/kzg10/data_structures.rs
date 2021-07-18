@@ -125,6 +125,8 @@ where
 pub struct PreparedVerifierKey<E: PairingEngine> {
     /// The generator of G1, prepared for power series.
     pub prepared_g: Vec<E::G1Affine>,
+    /// The generator of G1 that is used for making a commitment hiding, prepared for power series
+    pub prepared_gamma_g: Vec<E::G1Affine>,
     /// The generator of G2, prepared for use in pairings.
     pub prepared_h: <E::G2Affine as PairingCurve>::Prepared,
     /// \beta times the above generator of G2, prepared for use in pairings.
@@ -143,8 +145,16 @@ impl<E: PairingEngine> PreparedVerifierKey<E> {
             g.double_in_place();
         }
 
+        let mut prepared_gamma_g = Vec::<E::G1Affine>::new();
+        let mut gamma_g = E::G1Projective::from(vk.gamma_g.clone());
+        for _ in 0..supported_bits {
+            prepared_gamma_g.push(gamma_g.clone().into());
+            gamma_g.double_in_place();
+        }
+
         Self {
             prepared_g,
+            prepared_gamma_g,
             prepared_h: vk.prepared_h.clone(),
             prepared_beta_h: vk.prepared_beta_h.clone(),
         }

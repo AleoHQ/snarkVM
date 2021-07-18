@@ -71,14 +71,14 @@ jobs:
       - run:
           name: Build and run tests
           no_output_timeout: 60m
-          command: cd .integration && RUST_MIN_STACK=67108864 cargo test testnet1
+          command: cd .integration && RUST_MIN_STACK=67108864 cargo test testnet2
       - clear_environment:
           cache_key: snarkvm-stable-testnet2-cache
 
   algorithms:
     docker:
       - image: cimg/rust:1.53.0
-    resource_class: xlarge
+    resource_class: 2xlarge
     steps:
       - checkout
       - setup_environment:
@@ -93,7 +93,7 @@ jobs:
   curves:
     docker:
       - image: cimg/rust:1.53.0
-    resource_class: xlarge
+    resource_class: 2xlarge
     steps:
       - checkout
       - setup_environment:
@@ -108,7 +108,7 @@ jobs:
   derives:
     docker:
       - image: cimg/rust:1.53.0
-    resource_class: xlarge
+    resource_class: 2xlarge
     steps:
       - checkout
       - setup_environment:
@@ -123,7 +123,7 @@ jobs:
   dpc:
     docker:
       - image: cimg/rust:1.53.0
-    resource_class: xlarge
+    resource_class: 2xlarge
     steps:
       - checkout
       - setup_environment:
@@ -138,7 +138,7 @@ jobs:
   fields:
     docker:
       - image: cimg/rust:1.53.0
-    resource_class: xlarge
+    resource_class: 2xlarge
     steps:
       - checkout
       - setup_environment:
@@ -153,7 +153,7 @@ jobs:
   gadgets:
     docker:
       - image: cimg/rust:1.53.0
-    resource_class: xlarge
+    resource_class: 2xlarge
     steps:
       - checkout
       - setup_environment:
@@ -168,7 +168,7 @@ jobs:
   marlin:
     docker:
       - image: cimg/rust:1.53.0
-    resource_class: xlarge
+    resource_class: 2xlarge
     steps:
       - checkout
       - setup_environment:
@@ -183,7 +183,7 @@ jobs:
   parameters:
     docker:
       - image: cimg/rust:1.53.0
-    resource_class: xlarge
+    resource_class: 2xlarge
     steps:
       - checkout
       - setup_environment:
@@ -198,7 +198,7 @@ jobs:
   polycommit:
     docker:
       - image: cimg/rust:1.53.0
-    resource_class: xlarge
+    resource_class: 2xlarge
     steps:
       - checkout
       - setup_environment:
@@ -213,7 +213,7 @@ jobs:
   posw:
     docker:
       - image: cimg/rust:1.53.0
-    resource_class: xlarge
+    resource_class: 2xlarge
     steps:
       - checkout
       - setup_environment:
@@ -228,7 +228,7 @@ jobs:
   profiler:
     docker:
       - image: cimg/rust:1.53.0
-    resource_class: xlarge
+    resource_class: 2xlarge
     steps:
       - checkout
       - setup_environment:
@@ -243,7 +243,7 @@ jobs:
   r1cs:
     docker:
       - image: cimg/rust:1.53.0
-    resource_class: xlarge
+    resource_class: 2xlarge
     steps:
       - checkout
       - setup_environment:
@@ -258,7 +258,7 @@ jobs:
   utilities:
     docker:
       - image: cimg/rust:1.53.0
-    resource_class: xlarge
+    resource_class: 2xlarge
     steps:
       - checkout
       - setup_environment:
@@ -273,7 +273,7 @@ jobs:
   fmt:
     docker:
       - image: howardwu/snarkos-ci:2021-03-25
-    resource_class: xlarge
+    resource_class: 2xlarge
     steps:
       - checkout
       - setup_environment:

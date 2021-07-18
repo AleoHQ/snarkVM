@@ -21,8 +21,6 @@ use snarkvm_r1cs::{Assignment, ConstraintSynthesizer, ConstraintSystem, Synthesi
 
 /// Always-accept program
 pub struct NoopCircuit<C: Testnet2Components> {
-    /// Local data commitment parameters
-    pub local_data_commitment_parameters: <C::LocalDataCommitment as CommitmentScheme>::Parameters,
     /// Commitment to the program input.
     pub local_data_root: Option<<C::LocalDataCRH as CRH>::Output>,
     /// Record position
@@ -30,21 +28,15 @@ pub struct NoopCircuit<C: Testnet2Components> {
 }
 
 impl<C: Testnet2Components> NoopCircuit<C> {
-    pub fn blank(local_data_commitment_parameters: &<C::LocalDataCommitment as CommitmentScheme>::Parameters) -> Self {
+    pub fn blank() -> Self {
         Self {
-            local_data_commitment_parameters: local_data_commitment_parameters.clone(),
             local_data_root: Some(<C::LocalDataCRH as CRH>::Output::default()),
             position: 0u8,
         }
     }
 
-    pub fn new(
-        local_data_commitment_parameters: &<C::LocalDataCommitment as CommitmentScheme>::Parameters,
-        local_data_root: &<C::LocalDataCRH as CRH>::Output,
-        position: u8,
-    ) -> Self {
+    pub fn new(local_data_root: &<C::LocalDataCRH as CRH>::Output, position: u8) -> Self {
         Self {
-            local_data_commitment_parameters: local_data_commitment_parameters.clone(),
             local_data_root: Some(local_data_root.clone()),
             position,
         }
@@ -61,11 +53,10 @@ impl<C: Testnet2Components> ConstraintSynthesizer<C::InnerScalarField> for NoopC
 
         let _position = UInt8::alloc_input_vec_le(cs.ns(|| "Alloc position"), &[position])?;
 
-        let _local_data_commitment_parameters_gadget =
-            <C::LocalDataCommitmentGadget as CommitmentGadget<_, _>>::ParametersGadget::alloc_input(
-                &mut cs.ns(|| "Declare local data commitment parameters"),
-                || Ok(self.local_data_commitment_parameters.clone()),
-            )?;
+        let _local_data_commitment_parameters_gadget = C::LocalDataCommitmentGadget::alloc_input(
+            &mut cs.ns(|| "Declare local data commitment parameters"),
+            || Ok(C::local_data_commitment().clone()),
+        )?;
 
         let _local_data_root_gadget = <C::LocalDataCRHGadget as CRHGadget<_, _>>::OutputGadget::alloc_input(
             cs.ns(|| "Allocate local data root"),

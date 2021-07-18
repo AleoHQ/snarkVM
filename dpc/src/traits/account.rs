@@ -15,21 +15,12 @@
 // along with the snarkVM library. If not, see <https://www.gnu.org/licenses/>.
 
 use crate::errors::AccountError;
-use snarkvm_algorithms::traits::{CommitmentScheme, EncryptionScheme, SignatureScheme};
 
 use rand::{CryptoRng, Rng};
 
 pub trait AccountScheme: Sized {
     type Address: Default;
     type PrivateKey;
-    type CommitmentScheme: CommitmentScheme;
-    type EncryptionScheme: EncryptionScheme;
-    type SignatureScheme: SignatureScheme;
 
-    fn new<R: Rng + CryptoRng>(
-        signature_parameters: &Self::SignatureScheme,
-        commitment_parameters: &Self::CommitmentScheme,
-        encryption_parameters: &Self::EncryptionScheme,
-        rng: &mut R,
-    ) -> Result<Self, AccountError>;
+    fn new<R: Rng + CryptoRng>(rng: &mut R) -> Result<Self, AccountError>;
 }

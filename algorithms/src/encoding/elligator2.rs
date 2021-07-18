@@ -17,7 +17,6 @@
 use crate::errors::EncodingError;
 use snarkvm_curves::traits::{
     pairing_engine::{AffineCurve, ProjectiveCurve},
-    Group,
     MontgomeryParameters,
     TwistedEdwardsParameters,
 };
@@ -26,12 +25,12 @@ use snarkvm_utilities::{to_bytes_le, FromBytes, ToBytes};
 
 use std::{cmp, marker::PhantomData, ops::Neg};
 
-pub struct Elligator2<P: MontgomeryParameters + TwistedEdwardsParameters, G: Group + ProjectiveCurve> {
+pub struct Elligator2<P: MontgomeryParameters + TwistedEdwardsParameters, G: ProjectiveCurve> {
     _parameters: PhantomData<P>,
     _group: PhantomData<G>,
 }
 
-impl<P: MontgomeryParameters + TwistedEdwardsParameters, G: Group + ProjectiveCurve> Elligator2<P, G> {
+impl<P: MontgomeryParameters + TwistedEdwardsParameters, G: ProjectiveCurve> Elligator2<P, G> {
     const A: P::BaseField = <P as MontgomeryParameters>::COEFF_A;
     const B: P::BaseField = <P as MontgomeryParameters>::COEFF_B;
     const D: P::BaseField = <P as TwistedEdwardsParameters>::COEFF_D;
@@ -61,7 +60,7 @@ impl<P: MontgomeryParameters + TwistedEdwardsParameters, G: Group + ProjectiveCu
             let r = input;
 
             // Let u = D.
-            // TODO (howardwu): change to 11.
+            // TODO (howardwu): CRITICAL - change to 11, confirm in gadget impl as well.
             let u = Self::D;
 
             // Let ur2 = u * r^2;

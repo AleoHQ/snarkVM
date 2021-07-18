@@ -14,20 +14,19 @@
 // You should have received a copy of the GNU General Public License
 // along with the snarkVM library. If not, see <https://www.gnu.org/licenses/>.
 
-use crate::errors::CommitmentError;
-use snarkvm_utilities::{rand::UniformRand, FromBytes, ToBytes};
+use crate::CommitmentError;
+use snarkvm_utilities::{FromBytes, ToBytes, UniformRand};
 
-use rand::Rng;
 use std::{fmt::Debug, hash::Hash};
 
-pub trait CommitmentScheme: Sized + Clone + From<<Self as CommitmentScheme>::Parameters> {
+pub trait CommitmentScheme: ToBytes + FromBytes + Sized + Clone + From<<Self as CommitmentScheme>::Parameters> {
     type Output: Clone + Debug + Default + Eq + Hash + ToBytes + FromBytes + Sync + Send;
-    type Parameters: Clone + Debug + Eq + ToBytes + FromBytes;
+    type Parameters: Clone + Debug + Eq;
     type Randomness: Clone + Debug + Default + Eq + UniformRand + ToBytes + FromBytes;
 
-    fn setup<R: Rng>(r: &mut R) -> Self;
+    fn setup(message: &str) -> Self;
 
     fn commit(&self, input: &[u8], randomness: &Self::Randomness) -> Result<Self::Output, CommitmentError>;
 
-    fn parameters(&self) -> &Self::Parameters;
+    fn parameters(&self) -> Self::Parameters;
 }

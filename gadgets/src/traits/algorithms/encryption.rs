@@ -25,8 +25,7 @@ use crate::{
     traits::{alloc::AllocGadget, eq::EqGadget},
 };
 
-pub trait EncryptionGadget<E: EncryptionScheme, F: Field> {
-    type ParametersGadget: AllocGadget<<E as EncryptionScheme>::Parameters, F> + Clone;
+pub trait EncryptionGadget<E: EncryptionScheme, F: Field>: AllocGadget<E, F> + Clone {
     type PrivateKeyGadget: AllocGadget<<E as EncryptionScheme>::PrivateKey, F>
         + ToBytesGadget<F>
         + Clone
@@ -44,14 +43,14 @@ pub trait EncryptionGadget<E: EncryptionScheme, F: Field> {
     type BlindingExponentGadget: AllocGadget<Vec<E::BlindingExponent>, F> + Clone + Sized + Debug;
 
     fn check_public_key_gadget<CS: ConstraintSystem<F>>(
+        &self,
         cs: CS,
-        parameters: &Self::ParametersGadget,
         private_key: &Self::PrivateKeyGadget,
     ) -> Result<Self::PublicKeyGadget, SynthesisError>;
 
     fn check_encryption_gadget<CS: ConstraintSystem<F>>(
+        &self,
         cs: CS,
-        parameters: &Self::ParametersGadget,
         randomness: &Self::RandomnessGadget,
         public_key: &Self::PublicKeyGadget,
         input: &Self::PlaintextGadget,

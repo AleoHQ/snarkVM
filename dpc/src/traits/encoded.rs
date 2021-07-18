@@ -23,7 +23,7 @@ use snarkvm_fields::{FieldParameters, PrimeField};
 
 pub trait EncodedRecordScheme: Sized {
     /// The group is composed of base field elements in `Self::InnerField`.
-    type Group: Group + ProjectiveCurve;
+    type Group: ProjectiveCurve;
     /// The inner field is equivalent to the base field in `Self::Group`.
     type InnerField: PrimeField;
     /// The outer field is unrelated to `Self::Group` and `Self::InnerField`.

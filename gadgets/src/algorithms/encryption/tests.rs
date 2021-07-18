@@ -14,28 +14,22 @@
 // You should have received a copy of the GNU General Public License
 // along with the snarkVM library. If not, see <https://www.gnu.org/licenses/>.
 
-use blake2::Blake2s;
-use rand::{Rng, SeedableRng};
-use rand_xorshift::XorShiftRng;
-
-use snarkvm_algorithms::{encryption::GroupEncryption, traits::EncryptionScheme};
-use snarkvm_curves::{
-    bls12_377::Fr,
-    edwards_bls12::{EdwardsAffine, EdwardsProjective},
-    traits::{Group, ProjectiveCurve},
-};
-use snarkvm_r1cs::{ConstraintSystem, TestConstraintSystem};
-
 use crate::{
     algorithms::encryption::*,
     curves::edwards_bls12::EdwardsBls12Gadget,
     traits::{algorithms::EncryptionGadget, alloc::AllocGadget, eq::EqGadget},
 };
+use snarkvm_algorithms::{encryption::GroupEncryption, traits::EncryptionScheme};
+use snarkvm_curves::{bls12_377::Fr, edwards_bls12::EdwardsProjective, traits::ProjectiveCurve};
+use snarkvm_r1cs::{ConstraintSystem, TestConstraintSystem};
 
-type TestEncryptionScheme = GroupEncryption<EdwardsProjective, EdwardsAffine, Blake2s>;
+use rand::{CryptoRng, Rng, SeedableRng};
+use rand_chacha::ChaChaRng;
+
+type TestEncryptionScheme = GroupEncryption<EdwardsProjective>;
 type TestEncryptionSchemeGadget = GroupEncryptionGadget<EdwardsProjective, Fr, EdwardsBls12Gadget>;
 
-fn generate_input<G: Group + ProjectiveCurve, R: Rng>(input_size: usize, rng: &mut R) -> Vec<G> {
+fn generate_input<G: ProjectiveCurve, R: Rng + CryptoRng>(input_size: usize, rng: &mut R) -> Vec<G> {
     let mut input = vec![];
     for _ in 0..input_size {
         input.push(G::rand(rng))
@@ -47,19 +41,15 @@ fn generate_input<G: Group + ProjectiveCurve, R: Rng>(input_size: usize, rng: &m
 #[test]
 fn test_group_encryption_public_key_gadget() {
     let mut cs = TestConstraintSystem::<Fr>::new();
-    let rng = &mut XorShiftRng::seed_from_u64(1231275789u64);
+    let rng = &mut ChaChaRng::seed_from_u64(1231275789u64);
 
-    let encryption_scheme = TestEncryptionScheme::setup(rng);
+    let encryption_scheme = TestEncryptionScheme::setup("test_group_encryption_public_key_gadget");
 
     let private_key = encryption_scheme.generate_private_key(rng);
     let public_key = encryption_scheme.generate_public_key(&private_key).unwrap();
 
-    let parameters_gadget =
-        <TestEncryptionSchemeGadget as EncryptionGadget<TestEncryptionScheme, _>>::ParametersGadget::alloc(
-            &mut cs.ns(|| "parameters_gadget"),
-            || Ok(&encryption_scheme.parameters),
-        )
-        .unwrap();
+    let encryption =
+        TestEncryptionSchemeGadget::alloc(&mut cs.ns(|| "parameters_gadget"), || Ok(&encryption_scheme)).unwrap();
     let private_key_gadget =
         <TestEncryptionSchemeGadget as EncryptionGadget<TestEncryptionScheme, _>>::PrivateKeyGadget::alloc(
             &mut cs.ns(|| "private_key_gadget"),
@@ -75,12 +65,8 @@ fn test_group_encryption_public_key_gadget() {
 
     println!("number of constraints for inputs: {}", cs.num_constraints());
 
-    let public_key_gadget =
-        <TestEncryptionSchemeGadget as EncryptionGadget<TestEncryptionScheme, _>>::check_public_key_gadget(
-            &mut cs.ns(|| "public_key_gadget_evaluation"),
-            &parameters_gadget,
-            &private_key_gadget,
-        )
+    let public_key_gadget = encryption
+        .check_public_key_gadget(&mut cs.ns(|| "public_key_gadget_evaluation"), &private_key_gadget)
         .unwrap();
 
     expected_public_key_gadget
@@ -101,9 +87,9 @@ fn test_group_encryption_public_key_gadget() {
 #[test]
 fn test_group_encryption_gadget() {
     let mut cs = TestConstraintSystem::<Fr>::new();
-    let rng = &mut XorShiftRng::seed_from_u64(1231275789u64);
+    let rng = &mut ChaChaRng::seed_from_u64(1231275789u64);
 
-    let encryption_scheme = TestEncryptionScheme::setup(rng);
+    let encryption_scheme = TestEncryptionScheme::setup("test_group_encryption_gadget");
 
     let private_key = encryption_scheme.generate_private_key(rng);
     let public_key = encryption_scheme.generate_public_key(&private_key).unwrap();
@@ -116,12 +102,8 @@ fn test_group_encryption_gadget() {
     let ciphertext = encryption_scheme.encrypt(&public_key, &randomness, &message).unwrap();
 
     // Alloc parameters, public key, plaintext, randomness, and blinding exponents
-    let parameters_gadget =
-        <TestEncryptionSchemeGadget as EncryptionGadget<TestEncryptionScheme, _>>::ParametersGadget::alloc(
-            &mut cs.ns(|| "parameters_gadget"),
-            || Ok(&encryption_scheme.parameters),
-        )
-        .unwrap();
+    let encryption =
+        TestEncryptionSchemeGadget::alloc(&mut cs.ns(|| "parameters_gadget"), || Ok(&encryption_scheme)).unwrap();
     let public_key_gadget =
         <TestEncryptionSchemeGadget as EncryptionGadget<TestEncryptionScheme, _>>::PublicKeyGadget::alloc(
             &mut cs.ns(|| "public_key_gadget"),
@@ -157,10 +139,9 @@ fn test_group_encryption_gadget() {
 
     println!("number of constraints for inputs: {}", cs.num_constraints());
 
-    let ciphertext_gadget =
-        <TestEncryptionSchemeGadget as EncryptionGadget<TestEncryptionScheme, _>>::check_encryption_gadget(
+    let ciphertext_gadget = encryption
+        .check_encryption_gadget(
             &mut cs.ns(|| "ciphertext_gadget_evaluation"),
-            &parameters_gadget,
             &randomness_gadget,
             &public_key_gadget,
             &plaintext_gadget,

@@ -43,6 +43,9 @@ pub mod commitment_tree;
 #[cfg(feature = "crh")]
 pub mod crh;
 
+#[cfg(feature = "crypto_hash")]
+pub mod crypto_hash;
+
 #[cfg(feature = "encoding")]
 pub mod encoding;
 
@@ -54,6 +57,9 @@ pub use errors::*;
 
 #[cfg(feature = "fft")]
 pub mod fft;
+
+#[cfg(feature = "hash_to_curve")]
+pub mod hash_to_curve;
 
 #[cfg(feature = "merkle_tree")]
 pub mod merkle_tree;

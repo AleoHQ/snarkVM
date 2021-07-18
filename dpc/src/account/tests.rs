@@ -16,8 +16,8 @@
 
 use crate::{
     account::{Account, Address, PrivateKey, ViewKey},
-    testnet1::{instantiated::Components, parameters::SystemParameters},
-    traits::account::AccountScheme,
+    testnet1::instantiated::Components,
+    traits::AccountScheme,
 };
 
 use rand::thread_rng;
@@ -26,18 +26,10 @@ use std::str::FromStr;
 #[test]
 fn test_account_new() {
     let rng = &mut thread_rng();
-    let parameters = SystemParameters::<Components>::load().unwrap();
 
-    let account = Account::<Components>::new(
-        &parameters.account_signature,
-        &parameters.account_commitment,
-        &parameters.account_encryption,
-        rng,
-    );
-
+    let account = Account::<Components>::new(rng);
     println!("{:?}", account);
     assert!(account.is_ok());
-
     println!("{}", account.unwrap());
 }
 

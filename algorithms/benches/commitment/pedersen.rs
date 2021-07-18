@@ -31,16 +31,20 @@ const NUM_WINDOWS: usize = 8;
 const WINDOW_SIZE: usize = 256;
 
 fn pedersen_commitment_setup(c: &mut Criterion) {
-    let rng = &mut thread_rng();
-
     c.bench_function("Pedersen Commitment Setup", move |b| {
-        b.iter(|| <PedersenCommitment<EdwardsProjective, NUM_WINDOWS, WINDOW_SIZE> as CommitmentScheme>::setup(rng))
+        b.iter(|| {
+            <PedersenCommitment<EdwardsProjective, NUM_WINDOWS, WINDOW_SIZE> as CommitmentScheme>::setup(
+                "pedersen_commitment_benchmark",
+            )
+        })
     });
 }
 
 fn pedersen_commitment_evaluation(c: &mut Criterion) {
     let rng = &mut thread_rng();
-    let parameters = <PedersenCommitment<EdwardsProjective, NUM_WINDOWS, WINDOW_SIZE> as CommitmentScheme>::setup(rng);
+    let parameters = <PedersenCommitment<EdwardsProjective, NUM_WINDOWS, WINDOW_SIZE> as CommitmentScheme>::setup(
+        "pedersen_commitment_benchmark",
+    );
     let input = vec![127u8; 256];
 
     c.bench_function("Pedersen Commitment Evaluation", move |b| {

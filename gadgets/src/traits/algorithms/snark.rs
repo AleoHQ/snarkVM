@@ -17,23 +17,42 @@
 use core::fmt::Debug;
 
 use snarkvm_algorithms::traits::SNARK;
-use snarkvm_fields::{Field, PrimeField};
+use snarkvm_fields::PrimeField;
 use snarkvm_r1cs::{errors::SynthesisError, ConstraintSystem};
 
 use crate::{
-    bits::{Boolean, ToBitsBEGadget, ToBytesGadget},
-    traits::alloc::{AllocBytesGadget, AllocGadget},
+    bits::Boolean,
+    traits::alloc::AllocGadget,
+    AllocBytesGadget,
     FromFieldElementsGadget,
+    ToBytesGadget,
+    ToConstraintFieldGadget,
 };
 
-pub trait SNARKVerifierGadget<N: SNARK, F: Field> {
-    type VerificationKeyGadget: AllocGadget<N::VerifyingKey, F> + AllocBytesGadget<Vec<u8>, F> + ToBytesGadget<F>;
-    type ProofGadget: AllocGadget<N::Proof, F> + AllocBytesGadget<Vec<u8>, F>;
-    type Input: ToBitsBEGadget<F> + Clone + ?Sized;
+pub trait PrepareGadget<T, F: PrimeField> {
+    fn prepare<CS: ConstraintSystem<F>>(&self, cs: CS) -> Result<T, SynthesisError>;
+}
 
-    fn check_verify<'a, CS: ConstraintSystem<F>, I: Iterator<Item = Self::Input>>(
+pub trait SNARKVerifierGadget<F: PrimeField, CF: PrimeField, S: SNARK> {
+    type PreparedVerificationKeyGadget: Clone;
+    type VerificationKeyGadget: AllocGadget<S::VerifyingKey, CF>
+        + ToConstraintFieldGadget<CF>
+        + ToBytesGadget<CF>
+        + PrepareGadget<Self::PreparedVerificationKeyGadget, CF>
+        + AllocBytesGadget<Vec<u8>, CF>;
+    type ProofGadget: AllocGadget<S::Proof, CF> + AllocBytesGadget<Vec<u8>, CF>;
+    type Input: Clone + ?Sized;
+
+    fn check_verify<'a, CS: ConstraintSystem<CF>, I: Iterator<Item = Self::Input>>(
         cs: CS,
         verification_key: &Self::VerificationKeyGadget,
+        input: I,
+        proof: &Self::ProofGadget,
+    ) -> Result<(), SynthesisError>;
+
+    fn prepared_check_verify<'a, CS: ConstraintSystem<CF>, I: Iterator<Item = Self::Input>>(
+        cs: CS,
+        prepared_verification_key: &Self::PreparedVerificationKeyGadget,
         input: I,
         proof: &Self::ProofGadget,
     ) -> Result<(), SynthesisError>;

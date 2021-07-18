@@ -62,8 +62,10 @@ pub fn commit(nonce: u32, root: &PedersenMerkleRootHash) -> Vec<u8> {
 
 // We need to instantiate the Merkle tree and the Gadget, but these should not be
 // proving system specific
+pub(crate) const NUM_WINDOWS: usize = 4;
+pub(crate) const WINDOW_SIZE: usize = 128;
 pub type M = MaskedMerkleTreeParameters;
-pub type HG = PedersenCompressedCRHGadget<EdwardsProjective, Fq, EdwardsBls12Gadget>;
+pub type HG = PedersenCompressedCRHGadget<EdwardsProjective, Fq, EdwardsBls12Gadget, NUM_WINDOWS, WINDOW_SIZE>;
 pub type F = Fr;
 
 /// A Proof of Succinct Work miner and verifier
@@ -81,7 +83,7 @@ where
     pub pk: Option<S::ProvingKey>,
 
     /// The (prepared) verifying key.
-    pub vk: S::PreparedVerifyingKey,
+    pub vk: S::VerifyingKey,
 
     _circuit: PhantomData<POSWCircuit<F, M, HG, CP>>,
 }

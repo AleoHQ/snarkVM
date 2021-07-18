@@ -20,20 +20,17 @@ use hashbrown::{HashMap, HashSet};
 
 use snarkvm_fields::PrimeField;
 use snarkvm_gadgets::{
-    bits::{Boolean, ToBytesGadget},
+    bits::Boolean,
     fields::FpGadget,
     nonnative::NonNativeFieldVar,
     traits::alloc::AllocGadget,
+    PrepareGadget,
+    ToBytesGadget,
+    ToConstraintFieldGadget,
 };
 use snarkvm_r1cs::{ConstraintSystem, SynthesisError};
 
 use crate::{BatchLCProof, LCTerm, LabeledCommitment, LinearCombination, PolynomialCommitment, String, Vec};
-
-/// Define the minimal interface of prepared allocated structures.
-pub trait PrepareGadget<Unprepared, F: PrimeField>: Sized {
-    /// Prepare from an unprepared element.
-    fn prepare<CS: ConstraintSystem<F>>(cs: CS, unprepared: &Unprepared) -> Result<Self, SynthesisError>;
-}
 
 /// A coefficient of `LinearCombination`.
 #[derive(Clone, Debug)]
@@ -157,18 +154,21 @@ pub struct PCCheckRandomDataVar<TargetField: PrimeField, BaseField: PrimeField> 
 /// verifier.
 pub trait PCCheckVar<PCF: PrimeField, PC: PolynomialCommitment<PCF>, ConstraintF: PrimeField>: Clone {
     /// An allocated version of `PC::VerifierKey`.
-    type VerifierKeyVar: AllocGadget<PC::VerifierKey, ConstraintF> + Clone + ToBytesGadget<ConstraintF>;
-    /// An allocated version of `PC::PreparedVerifierKey`.
-    type PreparedVerifierKeyVar: AllocGadget<PC::PreparedVerifierKey, ConstraintF>
+    type VerifierKeyVar: AllocGadget<PC::VerifierKey, ConstraintF>
         + Clone
-        + PrepareGadget<Self::VerifierKeyVar, ConstraintF>
-        + Into<Self::VerifierKeyVar>;
+        + ToBytesGadget<ConstraintF>
+        + ToConstraintFieldGadget<ConstraintF>
+        + PrepareGadget<Self::PreparedVerifierKeyVar, ConstraintF>;
+    /// An allocated version of `PC::PreparedVerifierKey`.
+    type PreparedVerifierKeyVar: AllocGadget<PC::PreparedVerifierKey, ConstraintF> + Clone + Into<Self::VerifierKeyVar>;
     /// An allocated version of `PC::Commitment`.
-    type CommitmentVar: AllocGadget<PC::Commitment, ConstraintF> + Clone + ToBytesGadget<ConstraintF>;
+    type CommitmentVar: AllocGadget<PC::Commitment, ConstraintF>
+        + Clone
+        + ToBytesGadget<ConstraintF>
+        + ToConstraintFieldGadget<ConstraintF>
+        + PrepareGadget<Self::PreparedCommitmentVar, ConstraintF>;
     /// An allocated version of `PC::PreparedCommitment`.
-    type PreparedCommitmentVar: AllocGadget<PC::PreparedCommitment, ConstraintF>
-        + PrepareGadget<Self::CommitmentVar, ConstraintF>
-        + Clone;
+    type PreparedCommitmentVar: AllocGadget<PC::PreparedCommitment, ConstraintF> + Clone;
     /// An allocated version of `LabeledCommitment<PC::Commitment>`.
     type LabeledCommitmentVar: AllocGadget<LabeledCommitment<PC::Commitment>, ConstraintF> + Clone;
     /// A prepared, allocated version of `LabeledCommitment<PC::Commitment>`.

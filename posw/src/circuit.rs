@@ -24,11 +24,7 @@ use snarkvm_fields::PrimeField;
 use snarkvm_gadgets::{
     algorithms::merkle_tree::compute_root,
     integers::uint::UInt8,
-    traits::{
-        algorithms::{CRHGadget, MaskedCRHGadget},
-        alloc::AllocGadget,
-        eq::EqGadget,
-    },
+    traits::{algorithms::MaskedCRHGadget, alloc::AllocGadget, eq::EqGadget},
 };
 use snarkvm_r1cs::{errors::SynthesisError, Assignment, ConstraintSynthesizer, ConstraintSystem};
 
@@ -65,16 +61,14 @@ impl<F: PrimeField, M: MaskedMerkleParameters, HG: MaskedCRHGadget<M::H, F>, CP:
         }
         let mask_bytes = UInt8::alloc_input_vec_le(cs.ns(|| "mask"), &mask)?;
 
-        let crh_parameters =
-            <HG as CRHGadget<M::H, F>>::ParametersGadget::alloc(&mut cs.ns(|| "new_parameters"), || {
-                let crh_parameters = self.merkle_parameters.parameters();
-                Ok(crh_parameters)
-            })?;
-        let mask_crh_parameters =
-            <HG as CRHGadget<M::H, F>>::ParametersGadget::alloc(&mut cs.ns(|| "new_mask_parameters"), || {
+        let crh_parameters = HG::alloc(&mut cs.ns(|| "new_parameters"), || Ok(self.merkle_parameters.crh()))?;
+        let mask_crh_parameters = <HG as MaskedCRHGadget<M::H, F>>::MaskParametersGadget::alloc(
+            &mut cs.ns(|| "new_mask_parameters"),
+            || {
                 let crh_parameters = self.merkle_parameters.mask_parameters();
                 Ok(crh_parameters)
-            })?;
+            },
+        )?;
         let leaves_number = 2u32.pow(M::DEPTH as u32) as usize;
         assert!(self.leaves.len() <= leaves_number);
 
@@ -148,14 +142,14 @@ mod test {
     // We use a small tree in this test
     define_masked_merkle_tree_parameters!(EdwardsMaskedMerkleParameters, PedersenCompressedCRH<Edwards, NUM_WINDOWS, WINDOW_SIZE>, 4);
 
-    type HashGadget = PedersenCompressedCRHGadget<Edwards, Fq, EdwardsBls12Gadget>;
+    type HashGadget = PedersenCompressedCRHGadget<Edwards, Fq, EdwardsBls12Gadget, NUM_WINDOWS, WINDOW_SIZE>;
     type EdwardsMaskedMerkleTree = MerkleTree<EdwardsMaskedMerkleParameters>;
 
     #[test]
     fn test_tree_proof() {
         let mut rng = thread_rng();
 
-        let parameters = EdwardsMaskedMerkleParameters::setup(&mut rng);
+        let parameters = EdwardsMaskedMerkleParameters::setup("test_tree_proof");
         let params = generate_random_parameters::<Bls12_377, _, _>(
             &POSWCircuit::<_, EdwardsMaskedMerkleParameters, HashGadget, TestPOSWCircuitParameters> {
                 leaves: vec![None; 7],

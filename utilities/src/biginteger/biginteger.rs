@@ -24,6 +24,7 @@ use crate::{
     ToBytes,
 };
 
+use num_bigint::BigUint;
 use rand::{
     distributions::{Distribution, Standard},
     Rng,
@@ -100,6 +101,9 @@ pub trait BigInteger:
 
     /// Compute the `i`-th bit of `self`.
     fn get_bit(&self, i: usize) -> bool;
+
+    /// Returns the BigUint representation.
+    fn to_biguint(&self) -> BigUint;
 
     /// Returns a vector for wnaf.
     fn find_wnaf(&self) -> Vec<i64>;

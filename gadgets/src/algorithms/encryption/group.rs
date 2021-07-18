@@ -14,70 +14,31 @@
 // You should have received a copy of the GNU General Public License
 // along with the snarkVM library. If not, see <https://www.gnu.org/licenses/>.
 
-use std::{borrow::Borrow, marker::PhantomData};
-
-use digest::Digest;
-use itertools::Itertools;
-
-use snarkvm_algorithms::encryption::{GroupEncryption, GroupEncryptionParameters, GroupEncryptionPublicKey};
-use snarkvm_curves::traits::{Group, ProjectiveCurve};
-use snarkvm_fields::{Field, PrimeField};
-use snarkvm_r1cs::{errors::SynthesisError, ConstraintSystem};
-use snarkvm_utilities::{to_bytes_le, CanonicalDeserialize, CanonicalSerialize, ToBytes};
-
 use crate::{
     bits::{Boolean, ToBytesGadget},
     integers::uint::UInt8,
     traits::{
         algorithms::EncryptionGadget,
         alloc::AllocGadget,
-        curves::{CompressedGroupGadget, GroupGadget},
+        curves::{CompressedGroupGadget, CurveGadget},
         eq::{ConditionalEqGadget, EqGadget},
         integers::integer::Integer,
     },
 };
+use snarkvm_algorithms::encryption::{GroupEncryption, GroupEncryptionPublicKey};
+use snarkvm_curves::ProjectiveCurve;
+use snarkvm_fields::{Field, PrimeField};
+use snarkvm_r1cs::{errors::SynthesisError, ConstraintSystem};
+use snarkvm_utilities::{to_bytes_le, ToBytes};
 
-/// Group encryption parameters gadget
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct GroupEncryptionParametersGadget<G: Group> {
-    parameters: GroupEncryptionParameters<G>,
-}
-
-impl<G: Group + ProjectiveCurve, F: Field> AllocGadget<GroupEncryptionParameters<G>, F>
-    for GroupEncryptionParametersGadget<G>
-{
-    fn alloc<
-        Fn: FnOnce() -> Result<T, SynthesisError>,
-        T: Borrow<GroupEncryptionParameters<G>>,
-        CS: ConstraintSystem<F>,
-    >(
-        _cs: CS,
-        value_gen: Fn,
-    ) -> Result<Self, SynthesisError> {
-        let value = value_gen()?;
-        let parameters = value.borrow().clone();
-        Ok(Self { parameters })
-    }
-
-    fn alloc_input<
-        Fn: FnOnce() -> Result<T, SynthesisError>,
-        T: Borrow<GroupEncryptionParameters<G>>,
-        CS: ConstraintSystem<F>,
-    >(
-        _cs: CS,
-        value_gen: Fn,
-    ) -> Result<Self, SynthesisError> {
-        let value = value_gen()?;
-        let parameters = value.borrow().clone();
-        Ok(Self { parameters })
-    }
-}
+use itertools::Itertools;
+use std::{borrow::Borrow, marker::PhantomData};
 
 /// Group encryption private key gadget
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct GroupEncryptionPrivateKeyGadget<G: Group>(pub Vec<UInt8>, PhantomData<G>);
+pub struct GroupEncryptionPrivateKeyGadget<G: ProjectiveCurve>(pub Vec<UInt8>, PhantomData<G>);
 
-impl<G: Group, F: PrimeField> AllocGadget<G::ScalarField, F> for GroupEncryptionPrivateKeyGadget<G> {
+impl<G: ProjectiveCurve, F: PrimeField> AllocGadget<G::ScalarField, F> for GroupEncryptionPrivateKeyGadget<G> {
     fn alloc<Fn: FnOnce() -> Result<T, SynthesisError>, T: Borrow<G::ScalarField>, CS: ConstraintSystem<F>>(
         cs: CS,
         value_gen: Fn,
@@ -101,7 +62,7 @@ impl<G: Group, F: PrimeField> AllocGadget<G::ScalarField, F> for GroupEncryption
     }
 }
 
-impl<G: Group, F: PrimeField> ToBytesGadget<F> for GroupEncryptionPrivateKeyGadget<G> {
+impl<G: ProjectiveCurve, F: PrimeField> ToBytesGadget<F> for GroupEncryptionPrivateKeyGadget<G> {
     fn to_bytes<CS: ConstraintSystem<F>>(&self, mut cs: CS) -> Result<Vec<UInt8>, SynthesisError> {
         self.0.to_bytes(&mut cs.ns(|| "to_bytes"))
     }
@@ -113,9 +74,9 @@ impl<G: Group, F: PrimeField> ToBytesGadget<F> for GroupEncryptionPrivateKeyGadg
 
 /// Group encryption randomness gadget
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct GroupEncryptionRandomnessGadget<G: Group>(pub Vec<UInt8>, PhantomData<G>);
+pub struct GroupEncryptionRandomnessGadget<G: ProjectiveCurve>(pub Vec<UInt8>, PhantomData<G>);
 
-impl<G: Group, F: PrimeField> AllocGadget<G::ScalarField, F> for GroupEncryptionRandomnessGadget<G> {
+impl<G: ProjectiveCurve, F: PrimeField> AllocGadget<G::ScalarField, F> for GroupEncryptionRandomnessGadget<G> {
     fn alloc<Fn: FnOnce() -> Result<T, SynthesisError>, T: Borrow<G::ScalarField>, CS: ConstraintSystem<F>>(
         cs: CS,
         value_gen: Fn,
@@ -141,9 +102,11 @@ impl<G: Group, F: PrimeField> AllocGadget<G::ScalarField, F> for GroupEncryption
 
 /// Group encryption blinding exponents gadget
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct GroupEncryptionBlindingExponentsGadget<G: Group>(pub Vec<Vec<UInt8>>, PhantomData<G>);
+pub struct GroupEncryptionBlindingExponentsGadget<G: ProjectiveCurve>(pub Vec<Vec<UInt8>>, PhantomData<G>);
 
-impl<G: Group, F: PrimeField> AllocGadget<Vec<G::ScalarField>, F> for GroupEncryptionBlindingExponentsGadget<G> {
+impl<G: ProjectiveCurve, F: PrimeField> AllocGadget<Vec<G::ScalarField>, F>
+    for GroupEncryptionBlindingExponentsGadget<G>
+{
     fn alloc<Fn: FnOnce() -> Result<T, SynthesisError>, T: Borrow<Vec<G::ScalarField>>, CS: ConstraintSystem<F>>(
         mut cs: CS,
         value_gen: Fn,
@@ -186,13 +149,13 @@ impl<G: Group, F: PrimeField> AllocGadget<Vec<G::ScalarField>, F> for GroupEncry
 
 /// Group encryption public key gadget
 #[derive(Debug, PartialEq, Eq)]
-pub struct GroupEncryptionPublicKeyGadget<G: Group, F: Field, GG: GroupGadget<G, F>> {
+pub struct GroupEncryptionPublicKeyGadget<G: ProjectiveCurve, F: Field, GG: CurveGadget<G, F>> {
     public_key: GG,
     _group: PhantomData<*const G>,
     _engine: PhantomData<*const F>,
 }
 
-impl<G: Group + ProjectiveCurve, F: Field, GG: GroupGadget<G, F>> AllocGadget<GroupEncryptionPublicKey<G>, F>
+impl<G: ProjectiveCurve, F: Field, GG: CurveGadget<G, F>> AllocGadget<GroupEncryptionPublicKey<G>, F>
     for GroupEncryptionPublicKeyGadget<G, F, GG>
 {
     fn alloc<
@@ -226,7 +189,7 @@ impl<G: Group + ProjectiveCurve, F: Field, GG: GroupGadget<G, F>> AllocGadget<Gr
     }
 }
 
-impl<G: Group + ProjectiveCurve, F: Field, GG: CompressedGroupGadget<G, F>> ToBytesGadget<F>
+impl<G: ProjectiveCurve, F: Field, GG: CompressedGroupGadget<G, F>> ToBytesGadget<F>
     for GroupEncryptionPublicKeyGadget<G, F, GG>
 {
     /// Writes the x-coordinate of the encryption public key.
@@ -243,7 +206,7 @@ impl<G: Group + ProjectiveCurve, F: Field, GG: CompressedGroupGadget<G, F>> ToBy
     }
 }
 
-impl<G: Group + ProjectiveCurve, F: Field, GG: GroupGadget<G, F>> Clone for GroupEncryptionPublicKeyGadget<G, F, GG> {
+impl<G: ProjectiveCurve, F: Field, GG: CurveGadget<G, F>> Clone for GroupEncryptionPublicKeyGadget<G, F, GG> {
     fn clone(&self) -> Self {
         Self {
             public_key: self.public_key.clone(),
@@ -253,7 +216,9 @@ impl<G: Group + ProjectiveCurve, F: Field, GG: GroupGadget<G, F>> Clone for Grou
     }
 }
 
-impl<G: Group, F: Field, GG: GroupGadget<G, F>> ConditionalEqGadget<F> for GroupEncryptionPublicKeyGadget<G, F, GG> {
+impl<G: ProjectiveCurve, F: Field, GG: CurveGadget<G, F>> ConditionalEqGadget<F>
+    for GroupEncryptionPublicKeyGadget<G, F, GG>
+{
     #[inline]
     fn conditional_enforce_equal<CS: ConstraintSystem<F>>(
         &self,
@@ -275,17 +240,17 @@ impl<G: Group, F: Field, GG: GroupGadget<G, F>> ConditionalEqGadget<F> for Group
     }
 }
 
-impl<G: Group, F: Field, GG: GroupGadget<G, F>> EqGadget<F> for GroupEncryptionPublicKeyGadget<G, F, GG> {}
+impl<G: ProjectiveCurve, F: Field, GG: CurveGadget<G, F>> EqGadget<F> for GroupEncryptionPublicKeyGadget<G, F, GG> {}
 
 /// Group encryption plaintext gadget
 #[derive(Debug, PartialEq, Eq)]
-pub struct GroupEncryptionPlaintextGadget<G: Group, F: Field, GG: GroupGadget<G, F>> {
+pub struct GroupEncryptionPlaintextGadget<G: ProjectiveCurve, F: Field, GG: CurveGadget<G, F>> {
     plaintext: Vec<GG>,
     _group: PhantomData<*const G>,
     _engine: PhantomData<*const F>,
 }
 
-impl<G: Group + ProjectiveCurve, F: Field, GG: GroupGadget<G, F>> AllocGadget<Vec<G>, F>
+impl<G: ProjectiveCurve, F: Field, GG: CurveGadget<G, F>> AllocGadget<Vec<G>, F>
     for GroupEncryptionPlaintextGadget<G, F, GG>
 {
     fn alloc<Fn: FnOnce() -> Result<T, SynthesisError>, T: Borrow<Vec<G>>, CS: ConstraintSystem<F>>(
@@ -296,7 +261,11 @@ impl<G: Group + ProjectiveCurve, F: Field, GG: GroupGadget<G, F>> AllocGadget<Ve
 
         let mut plaintext = Vec::with_capacity(values.len());
         for (i, value) in values.into_iter().enumerate() {
-            let alloc_group = GG::alloc(cs.ns(|| format!("Plaintext Iteration {}", i)), || Ok(value.borrow()))?;
+            let alloc_group =
+                <GG as AllocGadget<G, F>>::alloc(
+                    cs.ns(|| format!("Plaintext Iteration {}", i)),
+                    || Ok(value.borrow()),
+                )?;
             plaintext.push(alloc_group);
         }
 
@@ -315,7 +284,10 @@ impl<G: Group + ProjectiveCurve, F: Field, GG: GroupGadget<G, F>> AllocGadget<Ve
 
         let mut plaintext = Vec::with_capacity(values.len());
         for (i, value) in values.into_iter().enumerate() {
-            let alloc_group = GG::alloc_input(cs.ns(|| format!("Plaintext Iteration {}", i)), || Ok(value.borrow()))?;
+            let alloc_group =
+                <GG as AllocGadget<G, F>>::alloc_input(cs.ns(|| format!("Plaintext Iteration {}", i)), || {
+                    Ok(value.borrow())
+                })?;
             plaintext.push(alloc_group);
         }
 
@@ -327,7 +299,7 @@ impl<G: Group + ProjectiveCurve, F: Field, GG: GroupGadget<G, F>> AllocGadget<Ve
     }
 }
 
-impl<G: Group + ProjectiveCurve, F: Field, GG: GroupGadget<G, F>> Clone for GroupEncryptionPlaintextGadget<G, F, GG> {
+impl<G: ProjectiveCurve, F: Field, GG: CurveGadget<G, F>> Clone for GroupEncryptionPlaintextGadget<G, F, GG> {
     fn clone(&self) -> Self {
         Self {
             plaintext: self.plaintext.clone(),
@@ -337,7 +309,9 @@ impl<G: Group + ProjectiveCurve, F: Field, GG: GroupGadget<G, F>> Clone for Grou
     }
 }
 
-impl<G: Group, F: Field, GG: GroupGadget<G, F>> ConditionalEqGadget<F> for GroupEncryptionPlaintextGadget<G, F, GG> {
+impl<G: ProjectiveCurve, F: Field, GG: CurveGadget<G, F>> ConditionalEqGadget<F>
+    for GroupEncryptionPlaintextGadget<G, F, GG>
+{
     #[inline]
     fn conditional_enforce_equal<CS: ConstraintSystem<F>>(
         &self,
@@ -361,20 +335,17 @@ impl<G: Group, F: Field, GG: GroupGadget<G, F>> ConditionalEqGadget<F> for Group
     }
 }
 
-impl<G: Group + ProjectiveCurve, F: Field, GG: GroupGadget<G, F>> EqGadget<F>
-    for GroupEncryptionPlaintextGadget<G, F, GG>
-{
-}
+impl<G: ProjectiveCurve, F: Field, GG: CurveGadget<G, F>> EqGadget<F> for GroupEncryptionPlaintextGadget<G, F, GG> {}
 
 /// Group encryption ciphertext gadget
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct GroupEncryptionCiphertextGadget<G: Group + ProjectiveCurve, F: Field, GG: CompressedGroupGadget<G, F>> {
+pub struct GroupEncryptionCiphertextGadget<G: ProjectiveCurve, F: Field, GG: CompressedGroupGadget<G, F>> {
     ciphertext: Vec<GG>,
     _group: PhantomData<*const G>,
     _engine: PhantomData<*const F>,
 }
 
-impl<G: Group + ProjectiveCurve, F: Field, GG: CompressedGroupGadget<G, F>> AllocGadget<Vec<G>, F>
+impl<G: ProjectiveCurve, F: Field, GG: CompressedGroupGadget<G, F>> AllocGadget<Vec<G>, F>
     for GroupEncryptionCiphertextGadget<G, F, GG>
 {
     fn alloc<Fn: FnOnce() -> Result<T, SynthesisError>, T: Borrow<Vec<G>>, CS: ConstraintSystem<F>>(
@@ -385,7 +356,10 @@ impl<G: Group + ProjectiveCurve, F: Field, GG: CompressedGroupGadget<G, F>> Allo
 
         let mut ciphertext = Vec::with_capacity(values.len());
         for (i, value) in values.into_iter().enumerate() {
-            let alloc_group = GG::alloc(cs.ns(|| format!("Ciphertext Iteration {}", i)), || Ok(value.borrow()))?;
+            let alloc_group =
+                <GG as AllocGadget<G, F>>::alloc(cs.ns(|| format!("Ciphertext Iteration {}", i)), || {
+                    Ok(value.borrow())
+                })?;
             ciphertext.push(alloc_group);
         }
 
@@ -404,7 +378,10 @@ impl<G: Group + ProjectiveCurve, F: Field, GG: CompressedGroupGadget<G, F>> Allo
 
         let mut ciphertext = Vec::with_capacity(values.len());
         for (i, value) in values.into_iter().enumerate() {
-            let alloc_group = GG::alloc_input(cs.ns(|| format!("Ciphertext Iteration {}", i)), || Ok(value.borrow()))?;
+            let alloc_group =
+                <GG as AllocGadget<G, F>>::alloc_input(cs.ns(|| format!("Ciphertext Iteration {}", i)), || {
+                    Ok(value.borrow())
+                })?;
             ciphertext.push(alloc_group);
         }
 
@@ -416,7 +393,7 @@ impl<G: Group + ProjectiveCurve, F: Field, GG: CompressedGroupGadget<G, F>> Allo
     }
 }
 
-impl<G: Group + ProjectiveCurve, F: Field, GG: CompressedGroupGadget<G, F>> ToBytesGadget<F>
+impl<G: ProjectiveCurve, F: Field, GG: CompressedGroupGadget<G, F>> ToBytesGadget<F>
     for GroupEncryptionCiphertextGadget<G, F, GG>
 {
     fn to_bytes<CS: ConstraintSystem<F>>(&self, mut cs: CS) -> Result<Vec<UInt8>, SynthesisError> {
@@ -444,7 +421,7 @@ impl<G: Group + ProjectiveCurve, F: Field, GG: CompressedGroupGadget<G, F>> ToBy
     }
 }
 
-impl<G: Group + ProjectiveCurve, F: Field, GG: CompressedGroupGadget<G, F>> ConditionalEqGadget<F>
+impl<G: ProjectiveCurve, F: Field, GG: CompressedGroupGadget<G, F>> ConditionalEqGadget<F>
     for GroupEncryptionCiphertextGadget<G, F, GG>
 {
     #[inline]
@@ -470,45 +447,69 @@ impl<G: Group + ProjectiveCurve, F: Field, GG: CompressedGroupGadget<G, F>> Cond
     }
 }
 
-impl<G: Group + ProjectiveCurve, F: Field, GG: CompressedGroupGadget<G, F>> EqGadget<F>
+impl<G: ProjectiveCurve, F: Field, GG: CompressedGroupGadget<G, F>> EqGadget<F>
     for GroupEncryptionCiphertextGadget<G, F, GG>
 {
 }
 
 /// Group encryption gadget
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct GroupEncryptionGadget<G: Group + ProjectiveCurve, F: PrimeField, GG: CompressedGroupGadget<G, F>> {
-    _group: PhantomData<fn() -> G>,
+pub struct GroupEncryptionGadget<G: ProjectiveCurve, F: PrimeField, GG: CompressedGroupGadget<G, F>> {
+    encryption: GroupEncryption<G>,
     _group_gadget: PhantomData<fn() -> GG>,
     _engine: PhantomData<F>,
 }
 
-impl<
-    G: Group + ProjectiveCurve,
-    SG: Group + CanonicalSerialize + CanonicalDeserialize,
-    D: Digest + Send + Sync,
-    F: PrimeField,
-    GG: CompressedGroupGadget<G, F>,
-> EncryptionGadget<GroupEncryption<G, SG, D>, F> for GroupEncryptionGadget<G, F, GG>
+impl<G: ProjectiveCurve, F: PrimeField, GG: CompressedGroupGadget<G, F>> AllocGadget<GroupEncryption<G>, F>
+    for GroupEncryptionGadget<G, F, GG>
+{
+    fn alloc<Fn: FnOnce() -> Result<T, SynthesisError>, T: Borrow<GroupEncryption<G>>, CS: ConstraintSystem<F>>(
+        _cs: CS,
+        value_gen: Fn,
+    ) -> Result<Self, SynthesisError> {
+        Ok(Self {
+            encryption: value_gen()?.borrow().clone(),
+            _group_gadget: PhantomData,
+            _engine: PhantomData,
+        })
+    }
+
+    fn alloc_input<
+        Fn: FnOnce() -> Result<T, SynthesisError>,
+        T: Borrow<GroupEncryption<G>>,
+        CS: ConstraintSystem<F>,
+    >(
+        _cs: CS,
+        value_gen: Fn,
+    ) -> Result<Self, SynthesisError> {
+        Ok(Self {
+            encryption: value_gen()?.borrow().clone(),
+            _group_gadget: PhantomData,
+            _engine: PhantomData,
+        })
+    }
+}
+
+impl<G: ProjectiveCurve, F: PrimeField, GG: CompressedGroupGadget<G, F>> EncryptionGadget<GroupEncryption<G>, F>
+    for GroupEncryptionGadget<G, F, GG>
 {
     type BlindingExponentGadget = GroupEncryptionBlindingExponentsGadget<G>;
     type CiphertextGadget = GroupEncryptionCiphertextGadget<G, F, GG>;
-    type ParametersGadget = GroupEncryptionParametersGadget<G>;
     type PlaintextGadget = GroupEncryptionPlaintextGadget<G, F, GG>;
     type PrivateKeyGadget = GroupEncryptionPrivateKeyGadget<G>;
     type PublicKeyGadget = GroupEncryptionPublicKeyGadget<G, F, GG>;
     type RandomnessGadget = GroupEncryptionRandomnessGadget<G>;
 
     fn check_public_key_gadget<CS: ConstraintSystem<F>>(
+        &self,
         mut cs: CS,
-        parameters: &Self::ParametersGadget,
         private_key: &Self::PrivateKeyGadget,
     ) -> Result<Self::PublicKeyGadget, SynthesisError> {
         let private_key_bits = private_key.0.iter().flat_map(|b| b.to_bits_le()).collect::<Vec<_>>();
         let mut public_key = GG::zero(&mut cs.ns(|| "zero"))?;
         public_key.scalar_multiplication(
             cs.ns(|| "check_public_key_gadget"),
-            private_key_bits.iter().zip_eq(&parameters.parameters.generator_powers),
+            private_key_bits.iter().zip_eq(&self.encryption.generator_powers),
         )?;
 
         Ok(GroupEncryptionPublicKeyGadget {
@@ -519,8 +520,8 @@ impl<
     }
 
     fn check_encryption_gadget<CS: ConstraintSystem<F>>(
+        &self, // g
         mut cs: CS,
-        parameters: &Self::ParametersGadget,               // g
         randomness: &Self::RandomnessGadget,               // y
         public_key: &Self::PublicKeyGadget,                // record_owner
         input: &Self::PlaintextGadget,                     // m
@@ -533,7 +534,7 @@ impl<
         let mut c_0 = zero.clone();
         c_0.scalar_multiplication(
             cs.ns(|| "c_0"),
-            randomness_bits.iter().zip_eq(&parameters.parameters.generator_powers),
+            randomness_bits.iter().zip_eq(&self.encryption.generator_powers),
         )?;
 
         let record_view_key_gadget =

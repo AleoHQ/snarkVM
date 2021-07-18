@@ -28,6 +28,7 @@ use snarkvm_r1cs::ConstraintSynthesizer;
 
 pub use snarkvm_polycommit::{marlin_pc::MarlinKZG10 as MultiPC, PolynomialCommitment};
 
+use crate::marlin::PreparedCircuitVerifyingKey;
 use blake2::Blake2s;
 use core::marker::PhantomData;
 use rand_core::RngCore;
@@ -44,6 +45,9 @@ pub type ProvingKey<E> = CircuitProvingKey<<E as PairingEngine>::Fr, MultiPC<E>>
 
 /// A circuit-specific verifying key.
 pub type VerifyingKey<E> = CircuitVerifyingKey<<E as PairingEngine>::Fr, MultiPC<E>>;
+
+/// A prepared circuit-specific verifying key.
+pub type PreparedVerifyingKey<E> = PreparedCircuitVerifyingKey<<E as PairingEngine>::Fr, MultiPC<E>>;
 
 impl<E: PairingEngine> From<Parameters<E>> for VerifyingKey<E> {
     fn from(parameters: Parameters<E>) -> Self {
@@ -86,7 +90,7 @@ where
     type AllocatedCircuit = C;
     type Circuit = (C, SRS<E>);
     // Abuse the Circuit type to pass the SRS as well.
-    type PreparedVerifyingKey = VerifyingKey<E>;
+    type PreparedVerifyingKey = PreparedVerifyingKey<E>;
     type Proof = Proof<<E as PairingEngine>::Fr, MultiPC<E>>;
     type ProvingKey = Parameters<E>;
     type VerifierInput = V;
@@ -95,7 +99,7 @@ where
     fn setup<R: RngCore>(
         (circuit, srs): &Self::Circuit,
         _rng: &mut R, // The Marlin circuit setup is deterministic.
-    ) -> Result<(Self::ProvingKey, Self::PreparedVerifyingKey), SNARKError> {
+    ) -> Result<(Self::ProvingKey, Self::VerifyingKey), SNARKError> {
         let setup_time = start_timer!(|| "{Marlin}::Setup");
         let parameters = Parameters::<E>::new(circuit, srs)?;
         end_timer!(setup_time);
@@ -117,12 +121,25 @@ where
     }
 
     fn verify(
-        verifying_key: &Self::PreparedVerifyingKey,
+        verifying_key: &Self::VerifyingKey,
         input: &Self::VerifierInput,
         proof: &Self::Proof,
     ) -> Result<bool, SNARKError> {
         let verification_time = start_timer!(|| "{Marlin}::Verifying");
         let res = MarlinTestnet1::<E>::verify(&verifying_key, &input.to_field_elements()?, &proof)
+            .map_err(|_| SNARKError::Crate("marlin", "Could not verify proof".to_owned()))?;
+        end_timer!(verification_time);
+
+        Ok(res)
+    }
+
+    fn verify_prepared(
+        verifying_key: &Self::PreparedVerifyingKey,
+        input: &Self::VerifierInput,
+        proof: &Self::Proof,
+    ) -> Result<bool, SNARKError> {
+        let verification_time = start_timer!(|| "{Marlin}::PreparedVerifying");
+        let res = MarlinTestnet1::<E>::prepared_verify(&verifying_key, &input.to_field_elements()?, &proof)
             .map_err(|_| SNARKError::Crate("marlin", "Could not verify proof".to_owned()))?;
         end_timer!(verification_time);
 

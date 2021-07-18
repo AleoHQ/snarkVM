@@ -21,16 +21,14 @@ use hashbrown::HashMap;
 use snarkvm_fields::{PrimeField, ToConstraintField};
 use snarkvm_gadgets::{
     nonnative::NonNativeFieldVar,
-    traits::{
-        alloc::{AllocBytesGadget, AllocGadget},
-        fields::ToConstraintFieldGadget,
-    },
+    traits::{alloc::AllocGadget, fields::ToConstraintFieldGadget},
+    AllocBytesGadget,
 };
 use snarkvm_polycommit::PCCheckVar;
 use snarkvm_r1cs::{ConstraintSystem, SynthesisError};
-use snarkvm_utilities::FromBytes;
 
 use crate::{marlin::Proof, PolynomialCommitment};
+use snarkvm_utilities::FromBytes;
 
 /// The prover message gadget
 #[repr(transparent)]

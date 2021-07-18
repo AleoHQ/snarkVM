@@ -21,6 +21,9 @@ pub enum RecordError {
     #[error("{}", _0)]
     AccountError(#[from] crate::AccountError),
 
+    #[error("{}", _0)]
+    AnyhowError(#[from] anyhow::Error),
+
     #[error("Failed to build Record data type. See console logs for error")]
     BuilderError,
 

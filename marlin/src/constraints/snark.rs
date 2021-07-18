@@ -21,8 +21,8 @@ use std::{
 
 use rand::{CryptoRng, Rng, RngCore};
 
-use snarkvm_algorithms::{SNARKError, SNARK};
-use snarkvm_fields::{PoseidonMDSField, PrimeField, ToConstraintField};
+use snarkvm_algorithms::{crypto_hash::PoseidonDefaultParametersField, Prepare, SNARKError, SNARK};
+use snarkvm_fields::{PrimeField, ToConstraintField};
 use snarkvm_gadgets::{
     bits::Boolean,
     nonnative::NonNativeFieldInputVar,
@@ -74,7 +74,7 @@ impl Debug for MarlinBound {
 /// The Marlin proof system.
 pub struct MarlinSNARK<
     F: PrimeField,
-    FSF: PrimeField + PoseidonMDSField,
+    FSF: PrimeField,
     PC: PolynomialCommitment<F>,
     FS: FiatShamirRng<F, FSF>,
     MC: MarlinMode,
@@ -93,7 +93,7 @@ pub struct MarlinSNARK<
 impl<TargetField, BaseField, PC, FS, MM, C, V> MarlinSNARK<TargetField, BaseField, PC, FS, MM, C, V>
 where
     TargetField: PrimeField,
-    BaseField: PrimeField + PoseidonMDSField,
+    BaseField: PrimeField + PoseidonDefaultParametersField,
     PC: PolynomialCommitment<TargetField>,
     FS: FiatShamirRng<TargetField, BaseField>,
     MM: MarlinMode,
@@ -144,7 +144,7 @@ where
     pub fn process_vk(
         vk: &CircuitVerifyingKey<TargetField, PC>,
     ) -> Result<PreparedCircuitVerifyingKey<TargetField, PC>, Box<MarlinConstraintsError>> {
-        Ok(PreparedCircuitVerifyingKey::prepare(vk))
+        Ok(vk.prepare())
     }
 
     /// Verify the proof with the prepared verifying key.
@@ -163,7 +163,7 @@ where
 impl<TargetField, BaseField, PC, FS, MM, C, V> SNARK for MarlinSNARK<TargetField, BaseField, PC, FS, MM, C, V>
 where
     TargetField: PrimeField,
-    BaseField: PrimeField + PoseidonMDSField,
+    BaseField: PrimeField + PoseidonDefaultParametersField,
     PC: PolynomialCommitment<TargetField>,
     FS: FiatShamirRng<TargetField, BaseField>,
     MM: MarlinMode,
@@ -182,12 +182,13 @@ where
 
     fn setup<R: RngCore>(
         (circuit, _srs): &Self::Circuit,
-        rng: &mut R, // The Marlin circuit setup is deterministic.
-    ) -> Result<(Self::ProvingKey, Self::PreparedVerifyingKey), SNARKError> {
+        rng: &mut R,
+    ) -> Result<(Self::ProvingKey, Self::VerifyingKey), SNARKError> {
+        // TODO: This is a trusted setup.
         let (circuit_proving_key, circuit_verifier_key) =
             MarlinCore::<TargetField, BaseField, PC, FS, MM>::circuit_specific_setup(circuit, rng).unwrap();
 
-        Ok((circuit_proving_key, circuit_verifier_key.into()))
+        Ok((circuit_proving_key, circuit_verifier_key))
     }
 
     fn prove<R: Rng>(
@@ -201,7 +202,7 @@ where
         }
     }
 
-    fn verify(
+    fn verify_prepared(
         verifying_key: &Self::PreparedVerifyingKey,
         input: &Self::VerifierInput,
         proof: &Self::Proof,
@@ -221,7 +222,7 @@ where
 pub struct MarlinSNARKGadget<F, FSF, PC, FS, MM, PCG, FSG>
 where
     F: PrimeField,
-    FSF: PrimeField + PoseidonMDSField,
+    FSF: PrimeField + PoseidonDefaultParametersField,
     PC: PolynomialCommitment<F>,
     FS: FiatShamirRng<F, FSF>,
     MM: MarlinMode,
@@ -242,7 +243,7 @@ impl<TargetField, BaseField, PC, FS, MM, PCG, FSG, C, V>
     for MarlinSNARKGadget<TargetField, BaseField, PC, FS, MM, PCG, FSG>
 where
     TargetField: PrimeField,
-    BaseField: PrimeField + PoseidonMDSField,
+    BaseField: PrimeField + PoseidonDefaultParametersField,
     PC: PolynomialCommitment<TargetField>,
     FS: FiatShamirRng<TargetField, BaseField>,
     MM: MarlinMode,
@@ -603,8 +604,8 @@ pub mod test {
 
         const INPUT_GADGET_CONSTRAINTS: usize = 383;
         const PROOF_GADGET_CONSTRAINTS: usize = 56;
-        const VK_GADGET_CONSTRAINTS: usize = 136;
-        const VERIFIER_GADGET_CONSTRAINTS: usize = 152885;
+        const VK_GADGET_CONSTRAINTS: usize = 140;
+        const VERIFIER_GADGET_CONSTRAINTS: usize = 150594;
 
         assert_eq!(input_gadget_constraints, INPUT_GADGET_CONSTRAINTS);
         assert_eq!(proof_gadget_constraints, PROOF_GADGET_CONSTRAINTS);
@@ -700,7 +701,7 @@ pub mod multiple_input_tests {
 
     pub struct VerifierCircuit<
         F: PrimeField,
-        ConstraintF: PrimeField + PoseidonMDSField,
+        ConstraintF: PrimeField + PoseidonDefaultParametersField,
         PC: PolynomialCommitment<F>,
         FS: FiatShamirRng<F, ConstraintF>,
         MM: MarlinMode,
@@ -725,7 +726,7 @@ pub mod multiple_input_tests {
 
     impl<
         F: PrimeField,
-        ConstraintF: PrimeField + PoseidonMDSField,
+        ConstraintF: PrimeField + PoseidonDefaultParametersField,
         PC: PolynomialCommitment<F>,
         FS: FiatShamirRng<F, ConstraintF>,
         MM: MarlinMode,

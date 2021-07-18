@@ -30,7 +30,7 @@ use crate::{
     },
 };
 
-pub trait CommitmentGadget<C: CommitmentScheme, F: Field> {
+pub trait CommitmentGadget<C: CommitmentScheme, F: Field>: AllocGadget<C, F> + Clone + Sized {
     type OutputGadget: ConditionalEqGadget<F>
         + CondSelectGadget<F>
         + EqGadget<F>
@@ -39,12 +39,11 @@ pub trait CommitmentGadget<C: CommitmentScheme, F: Field> {
         + Clone
         + Sized
         + Debug;
-    type ParametersGadget: AllocGadget<C::Parameters, F> + Clone;
     type RandomnessGadget: AllocGadget<C::Randomness, F> + Clone;
 
     fn check_commitment_gadget<CS: ConstraintSystem<F>>(
+        &self,
         cs: CS,
-        parameters: &Self::ParametersGadget,
         input: &[UInt8],
         r: &Self::RandomnessGadget,
     ) -> Result<Self::OutputGadget, SynthesisError>;

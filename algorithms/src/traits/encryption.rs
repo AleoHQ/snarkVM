@@ -14,38 +14,32 @@
 // You should have received a copy of the GNU General Public License
 // along with the snarkVM library. If not, see <https://www.gnu.org/licenses/>.
 
-use crate::{errors::EncryptionError, traits::SignatureScheme};
+use crate::EncryptionError;
 use snarkvm_utilities::{rand::UniformRand, FromBytes, ToBytes};
 
-use rand::Rng;
+use rand::{CryptoRng, Rng};
 use std::{fmt::Debug, hash::Hash};
 
-pub trait EncryptionScheme: Sized + Clone + From<<Self as EncryptionScheme>::Parameters> + SignatureScheme {
-    type Parameters: Clone + Debug + Eq + ToBytes + FromBytes;
-    type PrivateKey: Clone
-        + Debug
-        + Default
-        + Eq
-        + Hash
-        + ToBytes
-        + FromBytes
-        + UniformRand
-        + Into<<Self as SignatureScheme>::PrivateKey>;
-    type PublicKey: Clone + Debug + Default + Eq + ToBytes + FromBytes + Into<<Self as SignatureScheme>::PublicKey>;
+pub trait EncryptionScheme:
+    Sized + ToBytes + FromBytes + Debug + Clone + Eq + From<<Self as EncryptionScheme>::Parameters>
+{
+    type Parameters: Clone + Debug + Eq;
+    type PrivateKey: Clone + Debug + Default + Eq + Hash + ToBytes + FromBytes + UniformRand;
+    type PublicKey: Clone + Debug + Default + Eq + ToBytes + FromBytes;
     type Text: Clone + Debug + Default + Eq + ToBytes + FromBytes;
     type Randomness: Clone + Debug + Default + Eq + Hash + ToBytes + FromBytes + UniformRand;
     type BlindingExponent: Clone + Debug + Default + Eq + Hash + ToBytes;
 
-    fn setup<R: Rng>(rng: &mut R) -> Self;
+    fn setup(message: &str) -> Self;
 
-    fn generate_private_key<R: Rng>(&self, rng: &mut R) -> <Self as EncryptionScheme>::PrivateKey;
+    fn generate_private_key<R: Rng + CryptoRng>(&self, rng: &mut R) -> <Self as EncryptionScheme>::PrivateKey;
 
     fn generate_public_key(
         &self,
         private_key: &<Self as EncryptionScheme>::PrivateKey,
     ) -> Result<<Self as EncryptionScheme>::PublicKey, EncryptionError>;
 
-    fn generate_randomness<R: Rng>(
+    fn generate_randomness<R: Rng + CryptoRng>(
         &self,
         public_key: &<Self as EncryptionScheme>::PublicKey,
         rng: &mut R,

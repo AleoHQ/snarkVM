@@ -58,13 +58,6 @@ pub trait PCVerifierKey: CanonicalSerialize + CanonicalDeserialize + Clone + Deb
     fn supported_degree(&self) -> usize;
 }
 
-/// Defines the minimal interface of prepared verifier keys for any polynomial
-/// commitment scheme.
-pub trait PCPreparedVerifierKey<Unprepared: PCVerifierKey> {
-    /// prepare
-    fn prepare(vk: &Unprepared) -> Self;
-}
-
 /// Defines the minimal interface of commitments for any polynomial
 /// commitment scheme.
 pub trait PCCommitment: CanonicalDeserialize + CanonicalSerialize + Clone + Debug + ToBytes {
@@ -76,13 +69,6 @@ pub trait PCCommitment: CanonicalDeserialize + CanonicalSerialize + Clone + Debu
 
     /// Does this commitment's affine belong to the correct subgroup?
     fn is_in_correct_subgroup_assuming_on_curve(&self) -> bool;
-}
-
-/// Defines the minimal interface of prepared commitments for any polynomial
-/// commitment scheme.
-pub trait PCPreparedCommitment<Unprepared: PCCommitment>: Clone {
-    /// Prepare
-    fn prepare(commitment: &Unprepared) -> Self;
 }
 
 /// Defines the minimal interface of commitment randomness for any polynomial

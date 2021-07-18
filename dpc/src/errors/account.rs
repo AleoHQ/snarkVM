@@ -19,6 +19,9 @@ use snarkvm_algorithms::errors::{CRHError, CommitmentError, EncryptionError, PRF
 #[derive(Debug, Error)]
 pub enum AccountError {
     #[error("{}", _0)]
+    AnyhowError(#[from] anyhow::Error),
+
+    #[error("{}", _0)]
     CommitmentError(#[from] CommitmentError),
 
     #[error("{}", _0)]

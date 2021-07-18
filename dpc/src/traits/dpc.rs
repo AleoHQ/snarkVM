@@ -21,10 +21,8 @@ use std::sync::Arc;
 
 pub trait DPCScheme<L: LedgerScheme>: Sized {
     type Account: AccountScheme;
-    type LocalData;
     type Execution;
     type Record: RecordScheme<Owner = <Self::Account as AccountScheme>::Address>;
-    type SystemParameters;
     type Transaction: TransactionScheme<SerialNumber = <Self::Record as RecordScheme>::SerialNumber>;
     type TransactionKernel;
 

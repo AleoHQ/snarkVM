@@ -20,5 +20,8 @@ pub use blake2s::*;
 pub mod pedersen;
 pub use pedersen::*;
 
+pub mod pedersen_compressed;
+pub use pedersen_compressed::*;
+
 #[cfg(test)]
 pub mod tests;

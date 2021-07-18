@@ -15,7 +15,7 @@
 // along with the snarkVM library. If not, see <https://www.gnu.org/licenses/>.
 
 use snarkvm_dpc::{
-    testnet2::{instantiated::Components, parameters::SystemParameters, NoopProgram, Testnet2Components},
+    testnet2::{instantiated::Components, NoopProgram, Testnet2Components},
     DPCError,
     ProgramScheme,
 };
@@ -27,24 +27,20 @@ use rand::thread_rng;
 use std::path::PathBuf;
 
 mod utils;
+use snarkvm_algorithms::SNARK;
 use utils::store;
 
 #[allow(deprecated)]
 pub fn setup<C: Testnet2Components>() -> Result<(Vec<u8>, Vec<u8>), DPCError>
 where
+    <C::NoopProgramSNARK as SNARK>::VerifyingKey: ToConstraintField<C::OuterScalarField>,
     <C::PolynomialCommitment as PolynomialCommitment<C::InnerScalarField>>::VerifierKey:
         ToConstraintField<C::OuterScalarField>,
     <C::PolynomialCommitment as PolynomialCommitment<C::InnerScalarField>>::Commitment:
         ToConstraintField<C::OuterScalarField>,
 {
     let rng = &mut thread_rng();
-    let system_parameters = SystemParameters::<C>::load()?;
-
-    let noop_program = NoopProgram::<C>::setup(
-        &system_parameters.local_data_commitment,
-        &system_parameters.program_verification_key_crh,
-        rng,
-    )?;
+    let noop_program = NoopProgram::<C>::setup(rng)?;
     let (proving_key, verifying_key) = noop_program.to_snark_parameters();
     let noop_program_snark_pk = proving_key.to_bytes_le()?;
     let noop_program_snark_vk = verifying_key.to_bytes_le()?;

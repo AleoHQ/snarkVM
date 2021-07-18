@@ -17,7 +17,6 @@
 use super::{
     create_random_proof,
     generate_random_parameters,
-    prepare_verifying_key,
     verify_proof,
     PreparedVerifyingKey,
     Proof,
@@ -55,10 +54,10 @@ impl<E: PairingEngine, C: ConstraintSynthesizer<E::Fr>, V: ToConstraintField<E::
     fn setup<R: Rng>(
         circuit: &Self::Circuit,
         rng: &mut R,
-    ) -> Result<(Self::ProvingKey, Self::PreparedVerifyingKey), SNARKError> {
+    ) -> Result<(Self::ProvingKey, Self::VerifyingKey), SNARKError> {
         let setup_time = start_timer!(|| "{Groth 2016}::Setup");
         let pp = generate_random_parameters::<E, Self::Circuit, R>(circuit, rng)?;
-        let vk = prepare_verifying_key(pp.vk.clone());
+        let vk = pp.vk.clone();
         end_timer!(setup_time);
         Ok((pp, vk))
     }
@@ -74,8 +73,8 @@ impl<E: PairingEngine, C: ConstraintSynthesizer<E::Fr>, V: ToConstraintField<E::
         Ok(result)
     }
 
-    fn verify(
-        verifying_key: &Self::PreparedVerifyingKey,
+    fn verify_prepared(
+        prepared_verifying_key: &Self::PreparedVerifyingKey,
         input: &Self::VerifierInput,
         proof: &Self::Proof,
     ) -> Result<bool, SNARKError> {
@@ -84,7 +83,7 @@ impl<E: PairingEngine, C: ConstraintSynthesizer<E::Fr>, V: ToConstraintField<E::
         let input = input.to_field_elements()?;
         end_timer!(conversion_time);
         let verification = start_timer!(|| format!("Verify proof w/ input len: {}", input.len()));
-        let result = verify_proof(&verifying_key, proof, &input)?;
+        let result = verify_proof(&prepared_verifying_key, proof, &input)?;
         end_timer!(verification);
         end_timer!(verify_time);
         Ok(result)

@@ -14,7 +14,14 @@
 // You should have received a copy of the GNU General Public License
 // along with the snarkVM library. If not, see <https://www.gnu.org/licenses/>.
 
-use snarkvm_fields::{FftParameters, FieldParameters, Fp256, Fp256Parameters};
+use snarkvm_fields::{
+    FftParameters,
+    FieldParameters,
+    Fp256,
+    Fp256Parameters,
+    PoseidonDefaultParameters,
+    PoseidonDefaultParametersEntry,
+};
 use snarkvm_utilities::biginteger::BigInteger256 as BigInteger;
 
 /// BLS12-377 scalar field.
@@ -33,9 +40,12 @@ use snarkvm_utilities::biginteger::BigInteger256 as BigInteger;
 /// assert g2.multiplicative_order() == 2**s
 /// def into_chunks(val, width, n):
 ///     return [int(int(val) // (2 ** (width * i)) % 2 ** width) for i in range(n)]
-/// print("Gen: ", g * R % q)
-/// print("Gen: ", into_chunks(g * R % q, 64, 4))
-/// print("2-adic gen: ", into_chunks(g2 * R % q, 64, 4))
+/// print("Gen (g % q): ", g % q)
+/// print("Gen (g * R % q): ", g * R % q)
+/// print("Gen into_chunks(g * R % q): ", into_chunks(g * R % q, 64, 4))
+/// print("2-adic gen (g2 % q): ", g2 % q)
+/// print("2-adic gen (g2 * R % q): ", g2 * R % q)
+/// print("2-adic gen into_chunks(g2 * R % q): ", into_chunks(g2 * R % q, 64, 4))
 /// ```
 pub type Fr = Fp256<FrParameters>;
 
@@ -48,21 +58,16 @@ impl FftParameters for FrParameters {
 
     #[rustfmt::skip]
     const TWO_ADICITY: u32 = 47;
-    /// TODO (howardwu): CRITICAL - Fix this after a migration plan has been determined.
-    ///  - 0x3c3d3ca739381fb2,
-    ///  - 0x9a14cda3ec99772b,
-    ///  - 0xd7aacc7c59724826,
-    ///  - 0xd1ba211c5cc349c,
-    ///  + 12646347781564978760u64,
-    ///  + 6783048705277173164u64,
-    ///  + 268534165941069093u64,
-    ///  + 1121515446318641358u64,
+    /// TWO_ADIC_ROOT_OF_UNITY = 8065159656716812877374967518403273466521432693661810619979959746626482506078
+    /// Encoded in Montgomery form, the value is
+    /// (8065159656716812877374967518403273466521432693661810619979959746626482506078 * R % q) =
+    /// 7039866554349711480672062101017509031917008525101396696252683426045173093960
     #[rustfmt::skip]
     const TWO_ADIC_ROOT_OF_UNITY: BigInteger = BigInteger([
-        0x3c3d3ca739381fb2,
-        0x9a14cda3ec99772b,
-        0xd7aacc7c59724826,
-        0xd1ba211c5cc349c,
+        12646347781564978760u64,
+        6783048705277173164u64,
+        268534165941069093u64,
+        1121515446318641358u64,
     ]);
 }
 
@@ -136,4 +141,25 @@ impl FieldParameters for FrParameters {
         0x655e9a2ca55660b4,
         0x12ab,
     ]);
+}
+
+impl PoseidonDefaultParameters for FrParameters {
+    const PARAMS_OPT_FOR_CONSTRAINTS: [PoseidonDefaultParametersEntry; 7] = [
+        PoseidonDefaultParametersEntry::new(2, 17, 8, 31, 0),
+        PoseidonDefaultParametersEntry::new(3, 17, 8, 31, 0),
+        PoseidonDefaultParametersEntry::new(4, 17, 8, 31, 0),
+        PoseidonDefaultParametersEntry::new(5, 17, 8, 31, 0),
+        PoseidonDefaultParametersEntry::new(6, 17, 8, 31, 0),
+        PoseidonDefaultParametersEntry::new(7, 17, 8, 31, 0),
+        PoseidonDefaultParametersEntry::new(8, 17, 8, 31, 0),
+    ];
+    const PARAMS_OPT_FOR_WEIGHTS: [PoseidonDefaultParametersEntry; 7] = [
+        PoseidonDefaultParametersEntry::new(2, 257, 8, 13, 0),
+        PoseidonDefaultParametersEntry::new(3, 257, 8, 13, 0),
+        PoseidonDefaultParametersEntry::new(4, 257, 8, 13, 0),
+        PoseidonDefaultParametersEntry::new(5, 257, 8, 13, 0),
+        PoseidonDefaultParametersEntry::new(6, 257, 8, 13, 0),
+        PoseidonDefaultParametersEntry::new(7, 257, 8, 13, 0),
+        PoseidonDefaultParametersEntry::new(8, 257, 8, 13, 0),
+    ];
 }

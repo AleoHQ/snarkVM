@@ -72,6 +72,7 @@ pub use constraints::*;
 /// Errors pertaining to query sets.
 pub mod error;
 pub use error::*;
+use snarkvm_algorithms::Prepare;
 
 /// A random number generator that bypasses some limitations of the Rust borrow
 /// checker.
@@ -155,13 +156,13 @@ pub trait PolynomialCommitment<F: Field>: Sized + Clone + Debug {
     /// open the commitment to produce an evaluation proof.
     type CommitterKey: PCCommitterKey + Clone;
     /// The verifier key for the scheme; used to check an evaluation proof.
-    type VerifierKey: PCVerifierKey + Clone;
+    type VerifierKey: PCVerifierKey + Prepare<Self::PreparedVerifierKey> + Clone;
     /// The prepared verifier key for the scheme; used to check an evaluation proof.
-    type PreparedVerifierKey: PCPreparedVerifierKey<Self::VerifierKey> + Clone;
+    type PreparedVerifierKey: Clone;
     /// The commitment to a polynomial.
-    type Commitment: PCCommitment + Clone;
+    type Commitment: PCCommitment + Prepare<Self::PreparedCommitment> + Clone;
     /// The prepared commitment to a polynomial.
-    type PreparedCommitment: PCPreparedCommitment<Self::Commitment>;
+    type PreparedCommitment: Clone;
     /// The commitment randomness.
     type Randomness: PCRandomness + Clone;
     /// The evaluation proof for a single point.

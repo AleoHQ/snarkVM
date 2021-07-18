@@ -298,16 +298,11 @@ impl<P: MerkleParameters + Send + Sync> MerkleTree<P> {
             return Err(MerkleError::IncorrectLeafIndex(tree_index));
         }
 
-        // Iterate from the leaf up to the root, storing all intermediate hash values.
+        // Iterate from the leaf's parent up to the root, storing all intermediate hash values.
         let mut current_node = tree_index;
         while !is_root(current_node) {
             let sibling_node = sibling(current_node).unwrap();
-            let (curr_hash, sibling_hash) = (self.tree[current_node].clone(), self.tree[sibling_node].clone());
-            if is_left_child(current_node) {
-                path.push((curr_hash, sibling_hash));
-            } else {
-                path.push((sibling_hash, curr_hash));
-            }
+            path.push(self.tree[sibling_node].clone());
             current_node = parent(current_node).unwrap();
         }
 
@@ -318,10 +313,10 @@ impl<P: MerkleParameters + Send + Sync> MerkleTree<P> {
 
         if path.len() != Self::DEPTH as usize {
             let empty_hash = self.parameters.hash_empty()?;
-            path.push((self.tree[0].clone(), empty_hash));
+            path.push(empty_hash);
 
-            for &(ref hash, ref sibling_hash) in &self.padding_tree {
-                path.push((hash.clone(), sibling_hash.clone()));
+            for &(ref _hash, ref sibling_hash) in &self.padding_tree {
+                path.push(sibling_hash.clone());
             }
         }
         end_timer!(prove_time);
@@ -332,6 +327,7 @@ impl<P: MerkleParameters + Send + Sync> MerkleTree<P> {
             Ok(MerklePath {
                 parameters: self.parameters.clone(),
                 path,
+                leaf_index: index,
             })
         }
     }

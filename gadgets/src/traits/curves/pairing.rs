@@ -17,23 +17,21 @@
 use std::fmt::Debug;
 
 use snarkvm_curves::{traits::PairingEngine, PairingCurve};
-use snarkvm_fields::Field;
+use snarkvm_fields::PrimeField;
 use snarkvm_r1cs::{errors::SynthesisError, ConstraintSystem};
 
 use crate::{
     bits::ToBytesGadget,
     traits::{alloc::AllocGadget, curves::GroupGadget, fields::FieldGadget},
+    ToConstraintFieldGadget,
 };
 
-pub trait PairingGadget<Pairing: PairingEngine, F: Field> {
-    type G1Gadget: GroupGadget<Pairing::G1Projective, F>;
-    type G2Gadget: GroupGadget<Pairing::G2Projective, F>;
+pub trait PairingGadget<E: PairingEngine, F: PrimeField = <E as PairingEngine>::Fq> {
+    type G1Gadget: GroupGadget<E::G1Projective, F> + ToConstraintFieldGadget<F>;
+    type G2Gadget: GroupGadget<E::G2Projective, F> + ToConstraintFieldGadget<F>;
     type G1PreparedGadget: ToBytesGadget<F> + Clone + Debug;
-    type G2PreparedGadget: ToBytesGadget<F>
-        + AllocGadget<<Pairing::G2Affine as PairingCurve>::Prepared, F>
-        + Clone
-        + Debug;
-    type GTGadget: FieldGadget<Pairing::Fqk, F> + Clone;
+    type G2PreparedGadget: ToBytesGadget<F> + AllocGadget<<E::G2Affine as PairingCurve>::Prepared, F> + Clone + Debug;
+    type GTGadget: FieldGadget<E::Fqk, F> + Clone;
 
     fn miller_loop<CS: ConstraintSystem<F>>(
         cs: CS,

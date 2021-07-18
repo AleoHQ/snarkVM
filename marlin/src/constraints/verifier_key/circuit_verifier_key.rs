@@ -17,17 +17,33 @@
 use core::borrow::Borrow;
 
 use snarkvm_algorithms::fft::EvaluationDomain;
-use snarkvm_fields::{PoseidonMDSField, PrimeField};
-use snarkvm_gadgets::{bits::ToBytesGadget, fields::FpGadget, integers::uint::UInt8, traits::alloc::AllocGadget};
+use snarkvm_fields::{PrimeField, ToConstraintField};
+use snarkvm_gadgets::{
+    fields::FpGadget,
+    traits::alloc::AllocGadget,
+    AllocBytesGadget,
+    PrepareGadget,
+    ToBytesGadget,
+    ToConstraintFieldGadget,
+    UInt8,
+};
 use snarkvm_polycommit::PCCheckVar;
 use snarkvm_r1cs::{ConstraintSystem, SynthesisError};
 
-use crate::{marlin::CircuitVerifyingKey, PolynomialCommitment};
+use crate::{
+    constraints::{verifier::MarlinVerificationGadget, verifier_key::PreparedCircuitVerifyingKeyVar},
+    marlin::CircuitVerifyingKey,
+    FiatShamirRng,
+    FiatShamirRngVar,
+    PolynomialCommitment,
+};
+use snarkvm_algorithms::crypto_hash::PoseidonDefaultParametersField;
+use snarkvm_utilities::{marker::PhantomData, to_bytes_le, FromBytes, ToBytes};
 
 /// The circuit verifying key gadget
 pub struct CircuitVerifyingKeyVar<
     TargetField: PrimeField,
-    BaseField: PrimeField + PoseidonMDSField,
+    BaseField: PrimeField,
     PC: PolynomialCommitment<TargetField>,
     PCG: PCCheckVar<TargetField, PC, BaseField>,
 > {
@@ -49,7 +65,7 @@ pub struct CircuitVerifyingKeyVar<
 
 impl<
     TargetField: PrimeField,
-    BaseField: PrimeField + PoseidonMDSField,
+    BaseField: PrimeField,
     PC: PolynomialCommitment<TargetField>,
     PCG: PCCheckVar<TargetField, PC, BaseField>,
 > Clone for CircuitVerifyingKeyVar<TargetField, BaseField, PC, PCG>
@@ -69,7 +85,7 @@ impl<
 
 impl<
     TargetField: PrimeField,
-    BaseField: PrimeField + PoseidonMDSField,
+    BaseField: PrimeField,
     PC: PolynomialCommitment<TargetField>,
     PCG: PCCheckVar<TargetField, PC, BaseField>,
 > CircuitVerifyingKeyVar<TargetField, BaseField, PC, PCG>
@@ -82,7 +98,7 @@ impl<
 
 impl<
     TargetField: PrimeField,
-    BaseField: PrimeField + PoseidonMDSField,
+    BaseField: PrimeField,
     PC: PolynomialCommitment<TargetField>,
     PCG: PCCheckVar<TargetField, PC, BaseField>,
 > AllocGadget<CircuitVerifyingKey<TargetField, PC>, BaseField>
@@ -217,7 +233,103 @@ impl<
 
 impl<
     TargetField: PrimeField,
-    BaseField: PrimeField + PoseidonMDSField,
+    BaseField: PrimeField,
+    PC: PolynomialCommitment<TargetField>,
+    PCG: PCCheckVar<TargetField, PC, BaseField>,
+> ToConstraintFieldGadget<BaseField> for CircuitVerifyingKeyVar<TargetField, BaseField, PC, PCG>
+{
+    fn to_constraint_field<CS: ConstraintSystem<BaseField>>(
+        &self,
+        mut cs: CS,
+    ) -> Result<Vec<FpGadget<BaseField>>, SynthesisError> {
+        let mut res = Vec::new();
+        res.append(
+            &mut self
+                .domain_h_size_gadget
+                .to_constraint_field(cs.ns(|| "domain_h_size_gadget"))?,
+        );
+        res.append(
+            &mut self
+                .domain_k_size_gadget
+                .to_constraint_field(cs.ns(|| "domain_k_size_gadget"))?,
+        );
+        for (i, comm) in self.index_comms.iter().enumerate() {
+            res.append(&mut comm.to_constraint_field(cs.ns(|| format!("index_comm_{}", i)))?);
+        }
+        // TODO: this overhead can be cut.
+        res.append(&mut self.verifier_key.to_constraint_field(cs.ns(|| "verifier_key"))?);
+
+        Ok(res)
+    }
+}
+
+impl<TargetField, BaseField, PC, PCG, PR, R>
+    PrepareGadget<PreparedCircuitVerifyingKeyVar<TargetField, BaseField, PC, PCG, PR, R>, BaseField>
+    for CircuitVerifyingKeyVar<TargetField, BaseField, PC, PCG>
+where
+    TargetField: PrimeField,
+    BaseField: PrimeField + PoseidonDefaultParametersField,
+    PC: PolynomialCommitment<TargetField>,
+    PCG: PCCheckVar<TargetField, PC, BaseField>,
+    PR: FiatShamirRng<TargetField, BaseField>,
+    R: FiatShamirRngVar<TargetField, BaseField, PR>,
+    PC::Commitment: ToConstraintField<BaseField>,
+    PCG::VerifierKeyVar: ToConstraintFieldGadget<BaseField>,
+    PCG::CommitmentVar: ToConstraintFieldGadget<BaseField>,
+{
+    /// Returns an instance of a `PreparedCircuitVerifyingKeyGadget`.
+    fn prepare<CS: ConstraintSystem<BaseField>>(
+        &self,
+        mut cs: CS,
+    ) -> Result<PreparedCircuitVerifyingKeyVar<TargetField, BaseField, PC, PCG, PR, R>, SynthesisError> {
+        let mut fs_rng_raw = PR::new();
+        fs_rng_raw.absorb_bytes(&to_bytes_le![
+            &MarlinVerificationGadget::<TargetField, BaseField, PC, PCG>::PROTOCOL_NAME
+        ]?);
+
+        let index_vk_hash = {
+            let mut vk_hash_rng = PR::new();
+
+            let mut vk_elems = Vec::<BaseField>::new();
+            self.origin_verifier_key
+                .circuit_commitments
+                .iter()
+                .for_each(|index_comm| {
+                    vk_elems.append(&mut index_comm.to_field_elements().unwrap());
+                });
+            vk_hash_rng.absorb_native_field_elements(&vk_elems);
+            vk_hash_rng.squeeze_native_field_elements(1).unwrap()
+        };
+
+        fs_rng_raw.absorb_native_field_elements(&index_vk_hash);
+
+        let fs_rng = R::constant(cs.ns(|| "fs_rng_raw"), &fs_rng_raw);
+
+        let mut prepared_index_comms = Vec::<PCG::PreparedCommitmentVar>::new();
+        for (i, comm) in self.index_comms.iter().enumerate() {
+            prepared_index_comms.push(comm.prepare(cs.ns(|| format!("prepare_{}", i)))?);
+        }
+
+        let prepared_verifier_key = self.verifier_key.prepare(cs.ns(|| "prepare_last"))?;
+
+        Ok(
+            PreparedCircuitVerifyingKeyVar::<TargetField, BaseField, PC, PCG, PR, R> {
+                domain_h_size: self.domain_h_size,
+                domain_k_size: self.domain_k_size,
+                domain_h_size_gadget: self.domain_h_size_gadget.clone(),
+                domain_k_size_gadget: self.domain_k_size_gadget.clone(),
+                prepared_index_comms,
+                prepared_verifier_key,
+                fs_rng,
+                pr: PhantomData,
+            },
+        )
+    }
+}
+
+impl<
+    TargetField: PrimeField,
+    BaseField: PrimeField,
     PC: PolynomialCommitment<TargetField>,
     PCG: PCCheckVar<TargetField, PC, BaseField>,
 > ToBytesGadget<BaseField> for CircuitVerifyingKeyVar<TargetField, BaseField, PC, PCG>
@@ -238,7 +350,6 @@ impl<
 
     fn to_bytes_strict<CS: ConstraintSystem<BaseField>>(&self, mut cs: CS) -> Result<Vec<UInt8>, SynthesisError> {
         let mut res = Vec::<UInt8>::new();
-
         res.append(&mut self.domain_h_size_gadget.to_bytes(cs.ns(|| "domain_h_size_gadget"))?);
         res.append(&mut self.domain_k_size_gadget.to_bytes(cs.ns(|| "domain_k_size_gadget"))?);
         res.append(&mut self.verifier_key.to_bytes(cs.ns(|| "verifier_key"))?);
@@ -248,6 +359,52 @@ impl<
         }
 
         Ok(res)
+    }
+}
+
+impl<TargetField, BaseField, PC, PCG> AllocBytesGadget<Vec<u8>, BaseField>
+    for CircuitVerifyingKeyVar<TargetField, BaseField, PC, PCG>
+where
+    TargetField: PrimeField,
+    BaseField: PrimeField + PoseidonDefaultParametersField,
+    PC: PolynomialCommitment<TargetField>,
+    PCG: PCCheckVar<TargetField, PC, BaseField>,
+    PC::VerifierKey: ToConstraintField<BaseField>,
+    PC::Commitment: ToConstraintField<BaseField>,
+    PCG::VerifierKeyVar: ToConstraintFieldGadget<BaseField>,
+    PCG::CommitmentVar: ToConstraintFieldGadget<BaseField>,
+{
+    #[inline]
+    fn alloc_bytes<FN, T, CS: ConstraintSystem<BaseField>>(mut cs: CS, value_gen: FN) -> Result<Self, SynthesisError>
+    where
+        FN: FnOnce() -> Result<T, SynthesisError>,
+        T: Borrow<Vec<u8>>,
+    {
+        value_gen().and_then(|vk_bytes| {
+            let circuit_vk: CircuitVerifyingKey<TargetField, PC> = FromBytes::read_le(&vk_bytes.borrow()[..])?;
+
+            CircuitVerifyingKeyVar::<TargetField, BaseField, PC, PCG>::alloc(cs.ns(|| "unprepared_vk"), || {
+                Ok(circuit_vk)
+            })
+        })
+    }
+
+    #[inline]
+    fn alloc_input_bytes<FN, T, CS: ConstraintSystem<BaseField>>(
+        mut cs: CS,
+        value_gen: FN,
+    ) -> Result<Self, SynthesisError>
+    where
+        FN: FnOnce() -> Result<T, SynthesisError>,
+        T: Borrow<Vec<u8>>,
+    {
+        value_gen().and_then(|vk_bytes| {
+            let circuit_vk: CircuitVerifyingKey<TargetField, PC> = FromBytes::read_le(&vk_bytes.borrow()[..])?;
+
+            CircuitVerifyingKeyVar::<TargetField, BaseField, PC, PCG>::alloc_input(cs.ns(|| "unprepared_vk"), || {
+                Ok(circuit_vk)
+            })
+        })
     }
 }
 

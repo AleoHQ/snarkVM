@@ -49,7 +49,7 @@ pub struct Transaction<C: Testnet1Components> {
     pub network: Network,
 
     /// The root of the ledger commitment Merkle tree
-    pub ledger_digest: MerkleTreeDigest<C::MerkleParameters>,
+    pub ledger_digest: MerkleTreeDigest<C::LedgerMerkleTreeParameters>,
 
     /// The serial numbers of the records being spend
     pub old_serial_numbers: Vec<<C::AccountSignature as SignatureScheme>::PublicKey>,
@@ -59,7 +59,7 @@ pub struct Transaction<C: Testnet1Components> {
 
     #[derivative(PartialEq = "ignore")]
     /// The commitment to the old record death and new record birth programs
-    pub program_commitment: <C::ProgramVerificationKeyCommitment as CommitmentScheme>::Output,
+    pub program_commitment: <C::ProgramIDCommitment as CommitmentScheme>::Output,
 
     #[derivative(PartialEq = "ignore")]
     /// The root of the local data merkle tree
@@ -94,10 +94,10 @@ impl<C: Testnet1Components> Transaction<C> {
         old_serial_numbers: Vec<<Self as TransactionScheme>::SerialNumber>,
         new_commitments: Vec<<Self as TransactionScheme>::Commitment>,
         memorandum: <Self as TransactionScheme>::Memorandum,
-        ledger_digest: MerkleTreeDigest<C::MerkleParameters>,
+        ledger_digest: MerkleTreeDigest<C::LedgerMerkleTreeParameters>,
         inner_circuit_id: <C::InnerCircuitIDCRH as CRH>::Output,
         transaction_proof: <C::OuterSNARK as SNARK>::Proof,
-        program_commitment: <C::ProgramVerificationKeyCommitment as CommitmentScheme>::Output,
+        program_commitment: <C::ProgramIDCommitment as CommitmentScheme>::Output,
         local_data_root: <C::LocalDataCRH as CRH>::Output,
         value_balance: AleoAmount,
         network: Network,
@@ -128,12 +128,12 @@ impl<C: Testnet1Components> Transaction<C> {
 
 impl<C: Testnet1Components> TransactionScheme for Transaction<C> {
     type Commitment = <C::RecordCommitment as CommitmentScheme>::Output;
-    type Digest = MerkleTreeDigest<C::MerkleParameters>;
+    type Digest = MerkleTreeDigest<C::LedgerMerkleTreeParameters>;
     type EncryptedRecord = EncryptedRecord<C>;
     type InnerCircuitID = <C::InnerCircuitIDCRH as CRH>::Output;
     type LocalDataRoot = <C::LocalDataCRH as CRH>::Output;
     type Memorandum = [u8; 32];
-    type ProgramCommitment = <C::ProgramVerificationKeyCommitment as CommitmentScheme>::Output;
+    type ProgramCommitment = <C::ProgramIDCommitment as CommitmentScheme>::Output;
     type SerialNumber = <C::AccountSignature as SignatureScheme>::PublicKey;
     type Signature = <C::AccountSignature as SignatureScheme>::Signature;
     type ValueBalance = AleoAmount;
@@ -267,11 +267,10 @@ impl<C: Testnet1Components> FromBytes for Transaction<C> {
 
         let memorandum: [u8; 32] = FromBytes::read_le(&mut reader)?;
 
-        let ledger_digest: MerkleTreeDigest<C::MerkleParameters> = FromBytes::read_le(&mut reader)?;
+        let ledger_digest: MerkleTreeDigest<C::LedgerMerkleTreeParameters> = FromBytes::read_le(&mut reader)?;
         let inner_circuit_id: <C::InnerCircuitIDCRH as CRH>::Output = FromBytes::read_le(&mut reader)?;
         let transaction_proof: <C::OuterSNARK as SNARK>::Proof = FromBytes::read_le(&mut reader)?;
-        let program_commitment: <C::ProgramVerificationKeyCommitment as CommitmentScheme>::Output =
-            FromBytes::read_le(&mut reader)?;
+        let program_commitment: <C::ProgramIDCommitment as CommitmentScheme>::Output = FromBytes::read_le(&mut reader)?;
         let local_data_root: <C::LocalDataCRH as CRH>::Output = FromBytes::read_le(&mut reader)?;
 
         let value_balance: AleoAmount = FromBytes::read_le(&mut reader)?;

@@ -16,7 +16,6 @@
 
 use crate::{
     testnet1::{
-        parameters::SystemParameters,
         payload::Payload,
         record::{encoded::*, Record},
         Testnet1Components,
@@ -42,7 +41,7 @@ use snarkvm_utilities::{
 };
 
 use itertools::Itertools;
-use rand::Rng;
+use rand::{CryptoRng, Rng};
 use std::io::{Error, ErrorKind, Read, Result as IoResult, Write};
 
 type BaseField<T> = <<T as Testnet1Components>::EncryptionParameters as ModelParameters>::BaseField;
@@ -108,8 +107,7 @@ impl<C: Testnet1Components> EncryptedRecord<C> {
     /// Encrypt the given vector of records and returns
     /// 1. Encryption randomness
     /// 2. Encrypted record
-    pub fn encrypt<R: Rng>(
-        system_parameters: &SystemParameters<C>,
+    pub fn encrypt<R: Rng + CryptoRng>(
         record: &Record<C>,
         rng: &mut R,
     ) -> Result<
@@ -135,15 +133,9 @@ impl<C: Testnet1Components> EncryptedRecord<C> {
 
         // Encrypt the record plaintext
         let record_public_key = record.owner().into_repr();
-        let encryption_randomness = system_parameters
-            .account_encryption
-            .generate_randomness(record_public_key, rng)?;
-        let encrypted_record = C::AccountEncryption::encrypt(
-            &system_parameters.account_encryption,
-            record_public_key,
-            &encryption_randomness,
-            &record_plaintexts,
-        )?;
+        let encryption_randomness = C::account_encryption().generate_randomness(record_public_key, rng)?;
+        let encrypted_record =
+            C::account_encryption().encrypt(record_public_key, &encryption_randomness, &record_plaintexts)?;
 
         let encrypted_record = Self {
             encrypted_elements: encrypted_record,
@@ -154,17 +146,10 @@ impl<C: Testnet1Components> EncryptedRecord<C> {
     }
 
     /// Decrypt and reconstruct the encrypted record.
-    pub fn decrypt(
-        &self,
-        system_parameters: &SystemParameters<C>,
-        account_view_key: &ViewKey<C>,
-    ) -> Result<Record<C>, DPCError> {
+    pub fn decrypt(&self, account_view_key: &ViewKey<C>) -> Result<Record<C>, DPCError> {
         // Decrypt the encrypted record
-        let plaintext_elements = C::AccountEncryption::decrypt(
-            &system_parameters.account_encryption,
-            &account_view_key.decryption_key,
-            &self.encrypted_elements,
-        )?;
+        let plaintext_elements =
+            C::account_encryption().decrypt(&account_view_key.decryption_key, &self.encrypted_elements)?;
 
         let mut plaintext = Vec::with_capacity(plaintext_elements.len());
         for element in plaintext_elements {
@@ -192,7 +177,7 @@ impl<C: Testnet1Components> EncryptedRecord<C> {
 
         // Construct the record account address
 
-        let owner = Address::from_view_key(&system_parameters.account_encryption, &account_view_key)?;
+        let owner = Address::from_view_key(&account_view_key)?;
 
         // Determine if the record is a dummy
 
@@ -216,11 +201,7 @@ impl<C: Testnet1Components> EncryptedRecord<C> {
             serial_number_nonce
         ]?;
 
-        let commitment = C::RecordCommitment::commit(
-            &system_parameters.record_commitment,
-            &commitment_input,
-            &commitment_randomness,
-        )?;
+        let commitment = C::record_commitment().commit(&commitment_input, &commitment_randomness)?;
 
         Ok(Record::from(
             owner,
@@ -237,10 +218,7 @@ impl<C: Testnet1Components> EncryptedRecord<C> {
 
     /// Returns the encrypted record hash.
     /// The hash input is the ciphertext x-coordinates appended with the selector bits.
-    pub fn to_hash(
-        &self,
-        system_parameters: &SystemParameters<C>,
-    ) -> Result<<<C as DPCComponents>::EncryptedRecordCRH as CRH>::Output, DPCError> {
+    pub fn to_hash(&self) -> Result<<<C as DPCComponents>::EncryptedRecordCRH as CRH>::Output, DPCError> {
         let mut ciphertext_affine_x = Vec::with_capacity(self.encrypted_elements.len());
         let mut selector_bits = Vec::with_capacity(self.encrypted_elements.len() + 1);
         for ciphertext_element in &self.encrypted_elements {
@@ -268,9 +246,7 @@ impl<C: Testnet1Components> EncryptedRecord<C> {
         selector_bits.push(self.final_fq_high_selector);
         let selector_bytes = from_bits_le_to_bytes_le(&selector_bits);
 
-        Ok(system_parameters
-            .encrypted_record_crh
-            .hash(&to_bytes_le![ciphertext_affine_x, selector_bytes]?)?)
+        Ok(C::encrypted_record_crh().hash(&to_bytes_le![ciphertext_affine_x, selector_bytes]?)?)
     }
 
     /// Returns the intermediate components of the encryption algorithm that the inner SNARK
@@ -281,7 +257,6 @@ impl<C: Testnet1Components> EncryptedRecord<C> {
     /// 4. Record fq high selectors - Used for plaintext serialization/deserialization
     /// 5. Record ciphertext blinding exponents used to encrypt the record
     pub fn prepare_encryption_gadget_components(
-        system_parameters: &SystemParameters<C>,
         record: &Record<C>,
         encryption_randomness: &<<C as DPCComponents>::AccountEncryption as EncryptionScheme>::Randomness,
     ) -> Result<RecordEncryptionGadgetComponents<C>, DPCError> {
@@ -359,18 +334,14 @@ impl<C: Testnet1Components> EncryptedRecord<C> {
 
         // Encrypt the record plaintext
         let record_public_key = record.owner().into_repr();
-        let encryption_blinding_exponents = system_parameters.account_encryption.generate_blinding_exponents(
+        let encryption_blinding_exponents = C::account_encryption().generate_blinding_exponents(
             record_public_key,
             encryption_randomness,
             record_plaintexts.len(),
         )?;
 
-        let encrypted_record = C::AccountEncryption::encrypt(
-            &system_parameters.account_encryption,
-            record_public_key,
-            &encryption_randomness,
-            &record_plaintexts,
-        )?;
+        let encrypted_record =
+            C::account_encryption().encrypt(record_public_key, &encryption_randomness, &record_plaintexts)?;
 
         // Compute the compressed ciphertext selector bits
         let mut ciphertext_selectors = Vec::with_capacity(encrypted_record.len());

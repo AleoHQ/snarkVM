@@ -165,6 +165,11 @@ macro_rules! biginteger {
             }
 
             #[inline]
+            fn to_biguint(&self) -> num_bigint::BigUint {
+                BigUint::from_bytes_le(&self.to_bytes_le().unwrap())
+            }
+
+            #[inline]
             fn find_wnaf(&self) -> Vec<i64> {
                 let mut res = vec![];
 
@@ -253,9 +258,7 @@ macro_rules! biginteger {
 
         impl Display for $name {
             fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-                // TODO: Implement a native version, without the unwrap.
-                let bytes = self.0.to_bytes_le().unwrap();
-                write!(f, "{}", num_bigint::BigUint::from_bytes_le(&bytes))
+                write!(f, "{}", self.to_biguint())
             }
         }
 

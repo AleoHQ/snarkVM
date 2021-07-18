@@ -25,16 +25,10 @@ pub use merkle_tree::*;
 #[cfg(test)]
 pub mod tests;
 
-use rand::{Rng, SeedableRng};
-
-// TODO: How should this seed be chosen?
-const PRNG_SEED: [u8; 32] = [
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-];
-
-// PRNG to instantiate the Merkle Tree parameters
-pub fn prng() -> impl Rng {
-    rand_chacha::ChaChaRng::from_seed(PRNG_SEED)
+// TODO (howardwu): TEMPORARY - Deprecate this with a ledger rearchitecture.
+// Setup message to instantiate the Merkle Tree parameters
+pub const fn setup_message() -> &'static str {
+    "MerkleTreeParameters"
 }
 
 #[macro_export]
@@ -44,12 +38,9 @@ macro_rules! define_merkle_tree_parameters {
 #[rustfmt::skip]
         #[allow(unused_imports)]
         use $crate::{
-            merkle_tree::MerkleTree,
+            merkle_tree::MerkleTree,MerkleError,
             traits::{CRH, LoadableMerkleParameters, MaskedMerkleParameters, MerkleParameters},
         };
-
-        #[allow(unused_imports)]
-        use rand::Rng;
 
         #[derive(Clone, PartialEq, Eq, Debug)]
         pub struct $struct_name($hash);
@@ -59,16 +50,12 @@ macro_rules! define_merkle_tree_parameters {
 
             const DEPTH: usize = $depth;
 
-            fn setup<R: Rng>(rng: &mut R) -> Self {
-                Self(Self::H::setup(rng))
+            fn setup(message: &str) -> Self {
+                Self(Self::H::setup(message))
             }
 
             fn crh(&self) -> &Self::H {
                 &self.0
-            }
-
-            fn parameters(&self) -> &<Self::H as CRH>::Parameters {
-                self.crh().parameters()
             }
         }
 
@@ -80,10 +67,12 @@ macro_rules! define_merkle_tree_parameters {
 
         impl LoadableMerkleParameters for $struct_name {}
 
+        // TODO (howardwu): TEMPORARY - Deprecate this with a ledger rearchitecture.
         impl Default for $struct_name {
             fn default() -> Self {
+                // TODO (howardwu): Switch to a better default.
                 Self(<Self as MerkleParameters>::H::setup(
-                    &mut $crate::merkle_tree::prng(),
+                    $crate::merkle_tree::setup_message(),
                 ))
             }
         }
@@ -96,36 +85,29 @@ macro_rules! define_masked_merkle_tree_parameters {
 #[rustfmt::skip]
         #[allow(unused_imports)]
         use $crate::{
-            merkle_tree::MerkleTree,
-            traits::{CRH, CRHParameters, MaskedMerkleParameters, MerkleParameters},
+            merkle_tree::MerkleTree,MerkleError,
+            CRH, MaskedMerkleParameters, MerkleParameters,
         };
 
-        #[allow(unused_imports)]
-        use rand::Rng;
-
         #[derive(Clone, PartialEq, Eq, Debug)]
-        pub struct $struct_name($hash, <$hash as CRH>::Parameters);
+        pub struct $struct_name($hash, $hash);
 
         impl MerkleParameters for $struct_name {
             type H = $hash;
 
             const DEPTH: usize = $depth;
 
-            fn setup<R: Rng>(rng: &mut R) -> Self {
-                Self(Self::H::setup(rng), <Self::H as CRH>::Parameters::setup(rng))
+            fn setup(message: &str) -> Self {
+                Self(Self::H::setup(message), Self::H::setup(message))
             }
 
             fn crh(&self) -> &Self::H {
                 &self.0
             }
-
-            fn parameters(&self) -> &<Self::H as CRH>::Parameters {
-                self.crh().parameters()
-            }
         }
 
         impl MaskedMerkleParameters for $struct_name {
-            fn mask_parameters(&self) -> &<Self::H as CRH>::Parameters {
+            fn mask_parameters(&self) -> &Self::H {
                 &self.1
             }
         }
@@ -133,8 +115,9 @@ macro_rules! define_masked_merkle_tree_parameters {
         impl Default for $struct_name {
             fn default() -> Self {
                 Self(
-                    <Self as MerkleParameters>::H::setup(&mut $crate::merkle_tree::prng()),
-                    <<Self as MerkleParameters>::H as CRH>::Parameters::setup(&mut $crate::merkle_tree::prng()),
+                    // TODO (howardwu): Remove this unwrap and switch to a better default.
+                    <Self as MerkleParameters>::H::setup($crate::merkle_tree::setup_message()),
+                    <Self as MerkleParameters>::H::setup($crate::merkle_tree::setup_message()),
                 )
             }
         }

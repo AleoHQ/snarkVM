@@ -53,18 +53,14 @@ impl<C: DPCComponents> PrivateKey<C> {
     const INPUT_SK_SIG: [u8; 32] = [0u8; 32];
 
     /// Creates a new account private key.
-    pub fn new<R: Rng + CryptoRng>(
-        signature_parameters: &C::AccountSignature,
-        commitment_parameters: &C::AccountCommitment,
-        rng: &mut R,
-    ) -> Result<Self, AccountError> {
+    pub fn new<R: Rng + CryptoRng>(rng: &mut R) -> Result<Self, AccountError> {
         // Sample randomly until a valid private key is found.
         loop {
             // Samples a random account private key seed.
             let seed: [u8; 32] = rng.gen();
 
             // Returns the private key if it is valid.
-            match Self::from_seed(signature_parameters, commitment_parameters, &seed) {
+            match Self::from_seed(&seed) {
                 Ok(private_key) => return Ok(private_key),
                 _ => continue,
             };
@@ -72,11 +68,7 @@ impl<C: DPCComponents> PrivateKey<C> {
     }
 
     /// Derives the account private key from a given seed and verifies it is well-formed.
-    pub fn from_seed(
-        signature_parameters: &C::AccountSignature,
-        commitment_parameters: &C::AccountCommitment,
-        seed: &[u8; 32],
-    ) -> Result<Self, AccountError> {
+    pub fn from_seed(seed: &[u8; 32]) -> Result<Self, AccountError> {
         // Generate the SIG key pair.
         let sk_sig_bytes = Blake2s::evaluate(&seed, &Self::INPUT_SK_SIG)?;
         let sk_sig = <C::AccountSignature as SignatureScheme>::PrivateKey::read_le(&sk_sig_bytes[..])?;
@@ -108,7 +100,7 @@ impl<C: DPCComponents> PrivateKey<C> {
             };
 
             // Returns the private key if it is valid.
-            match private_key.is_valid(signature_parameters, commitment_parameters) {
+            match private_key.is_valid() {
                 true => return Ok(private_key),
                 false => {
                     r_pk_counter += 1;
@@ -119,22 +111,13 @@ impl<C: DPCComponents> PrivateKey<C> {
     }
 
     /// Returns `true` if the private key is well-formed. Otherwise, returns `false`.
-    pub fn is_valid(
-        &self,
-        signature_parameters: &C::AccountSignature,
-        commitment_parameters: &C::AccountCommitment,
-    ) -> bool {
-        self.to_decryption_key(signature_parameters, commitment_parameters)
-            .is_ok()
+    pub fn is_valid(&self) -> bool {
+        self.to_decryption_key().is_ok()
     }
 
     /// Returns the decryption key for the account view key.
-    pub fn to_decryption_key(
-        &self,
-        signature_parameters: &C::AccountSignature,
-        commitment_parameters: &C::AccountCommitment,
-    ) -> Result<<C::AccountEncryption as EncryptionScheme>::PrivateKey, AccountError> {
-        let commitment = self.commit(signature_parameters, commitment_parameters)?;
+    pub fn to_decryption_key(&self) -> Result<<C::AccountEncryption as EncryptionScheme>::PrivateKey, AccountError> {
+        let commitment = self.commit()?;
         let decryption_key_bytes = to_bytes_le![commitment]?;
 
         // This operation implicitly enforces that the unused MSB bits
@@ -170,14 +153,8 @@ impl<C: DPCComponents> PrivateKey<C> {
     }
 
     /// Returns the signature public key for deriving the account view key.
-    pub fn pk_sig(
-        &self,
-        signature_parameters: &C::AccountSignature,
-    ) -> Result<<C::AccountSignature as SignatureScheme>::PublicKey, AccountError> {
-        Ok(C::AccountSignature::generate_public_key(
-            signature_parameters,
-            &self.sk_sig,
-        )?)
+    pub fn pk_sig(&self) -> Result<<C::AccountSignature as SignatureScheme>::PublicKey, AccountError> {
+        Ok(C::account_signature().generate_public_key(&self.sk_sig)?)
     }
 
     /// Derives the account private key from a given seed and counter without verifying if it is well-formed.
@@ -219,20 +196,11 @@ impl<C: DPCComponents> PrivateKey<C> {
     }
 
     /// Returns the commitment output of the private key.
-    fn commit(
-        &self,
-        signature_parameters: &C::AccountSignature,
-        commitment_parameters: &C::AccountCommitment,
-    ) -> Result<<C::AccountCommitment as CommitmentScheme>::Output, AccountError> {
+    fn commit(&self) -> Result<<C::AccountCommitment as CommitmentScheme>::Output, AccountError> {
         // Construct the commitment input for the account address.
-        let pk_sig = self.pk_sig(signature_parameters)?;
-        let commit_input = to_bytes_le![pk_sig, self.sk_prf]?;
+        let commit_input = to_bytes_le![self.pk_sig()?, self.sk_prf]?;
 
-        Ok(C::AccountCommitment::commit(
-            commitment_parameters,
-            &commit_input,
-            &self.r_pk,
-        )?)
+        Ok(C::account_commitment().commit(&commit_input, &self.r_pk)?)
     }
 }
 

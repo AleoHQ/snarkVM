@@ -17,6 +17,7 @@
 pub mod commitment;
 pub mod commitment_tree;
 pub mod crh;
+pub mod crypto_hash;
 pub mod encoding;
 pub mod encryption;
 pub mod merkle_tree;

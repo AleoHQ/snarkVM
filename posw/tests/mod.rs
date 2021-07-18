@@ -22,6 +22,8 @@ use snarkvm_utilities::FromBytes;
 
 use rand::SeedableRng;
 
+/// TODO (howardwu): Update this when testnet2 is live.
+#[ignore]
 #[test]
 fn test_posw_load_and_mine() {
     // Load the PoSW Marlin parameters.
@@ -50,6 +52,8 @@ fn test_posw_load_and_mine() {
     println!("Proof - {}", hex::encode(proof));
 }
 
+/// TODO (howardwu): Update this when testnet2 is live.
+#[ignore]
 #[test]
 fn test_posw_verify_testnet1() {
     // Source from testnet1 block #171888.

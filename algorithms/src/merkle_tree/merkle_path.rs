@@ -29,39 +29,37 @@ pub type MerkleTreeDigest<P> = <<P as MerkleParameters>::H as CRH>::Output;
 #[derive(Clone, Debug)]
 pub struct MerklePath<P: MerkleParameters> {
     pub parameters: Arc<P>,
-    pub path: Vec<(MerkleTreeDigest<P>, MerkleTreeDigest<P>)>,
+    pub path: Vec<MerkleTreeDigest<P>>,
+    pub leaf_index: usize,
 }
 
 impl<P: MerkleParameters> MerklePath<P> {
     pub fn verify<L: ToBytes>(&self, root_hash: &MerkleTreeDigest<P>, leaf: &L) -> Result<bool, MerkleError> {
-        if self.path.len() != P::DEPTH {
-            return Ok(false);
-        }
-
         // Check that the given leaf matches the leaf in the membership proof.
         if !self.path.is_empty() {
             let hash_input_size_in_bytes = (P::H::INPUT_SIZE_BITS / 8) * 2;
             let mut buffer = vec![0u8; hash_input_size_in_bytes];
 
             let claimed_leaf_hash = self.parameters.hash_leaf::<L>(leaf, &mut buffer)?;
+            let mut index = self.leaf_index;
 
-            // Check if leaf is one of the bottom-most siblings.
-            if claimed_leaf_hash != self.path[0].0 && claimed_leaf_hash != self.path[0].1 {
-                return Ok(false);
-            };
+            let mut curr_path_node = claimed_leaf_hash;
+            let mut buffer = vec![0u8; hash_input_size_in_bytes];
 
             // Check levels between leaf level and root.
-            let mut previous_hash = claimed_leaf_hash;
-            let mut buffer = vec![0u8; hash_input_size_in_bytes];
-            for &(ref hash, ref sibling_hash) in &self.path {
-                // Check if the previous hash matches the correct current hash.
-                if &previous_hash != hash && &previous_hash != sibling_hash {
-                    return Ok(false);
-                };
-                previous_hash = self.parameters.hash_inner_node(hash, sibling_hash, &mut buffer)?;
+            for level in 0..self.path.len() {
+                // Check if path node at this level is left or right.
+                let (left_bytes, right_bytes) =
+                    Self::select_left_right_bytes(index, &curr_path_node, &self.path[level])?;
+                // Update the current path node.
+                curr_path_node = self
+                    .parameters
+                    .hash_inner_node(&left_bytes, &right_bytes, &mut buffer)?;
+                index >>= 1;
             }
 
-            if root_hash != &previous_hash {
+            // Check if final hash is root
+            if &curr_path_node != root_hash {
                 return Ok(false);
             }
 
@@ -70,17 +68,47 @@ impl<P: MerkleParameters> MerklePath<P> {
             Ok(false)
         }
     }
+
+    /// Convert `computed_hash` and `sibling_hash` to bytes. `index` is the first `path.len()` bits of
+    /// the position of tree.
+    ///
+    /// If the least significant bit of `index` is 0, then `input_1` will be left and `input_2` will be right.
+    /// Otherwise, `input_1` will be right and `input_2` will be left.
+    ///
+    /// Returns: (left, right)
+    fn select_left_right_bytes(
+        index: usize,
+        computed_hash: &<P::H as CRH>::Output,
+        sibling_hash: &<P::H as CRH>::Output,
+    ) -> Result<(<P::H as CRH>::Output, <P::H as CRH>::Output), MerkleError> {
+        let is_left = index & 1 == 0;
+        let mut left_bytes = computed_hash;
+        let mut right_bytes = sibling_hash;
+        if !is_left {
+            core::mem::swap(&mut left_bytes, &mut right_bytes);
+        }
+        Ok((*left_bytes, *right_bytes))
+    }
+
+    /// The position of on_path node in `leaf_and_sibling_hash` and `non_leaf_and_sibling_hash_path`.
+    /// `position[i]` is 0 (false) iff `i`th on-path node from top to bottom is on the left.
+    ///
+    /// This function simply converts `self.leaf_index` to boolean array in big endian form.
+    pub fn position_list(&self) -> impl Iterator<Item = bool> + '_ {
+        (0..self.path.len()).map(move |i| ((self.leaf_index >> i) & 1) != 0)
+    }
 }
 
 impl<P: MerkleParameters> Default for MerklePath<P> {
     fn default() -> Self {
         let mut path = Vec::with_capacity(P::DEPTH);
         for _i in 0..P::DEPTH {
-            path.push((MerkleTreeDigest::<P>::default(), MerkleTreeDigest::<P>::default()));
+            path.push(MerkleTreeDigest::<P>::default());
         }
         Self {
             parameters: Arc::new(P::default()),
             path,
+            leaf_index: 0,
         }
     }
 }

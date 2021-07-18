@@ -16,10 +16,10 @@
 
 use crate::{
     prelude::*,
-    testnet2::{EncryptedRecord, LocalData, Record, SystemParameters, Testnet2Components, Transaction},
+    testnet2::{EncryptedRecord, LocalData, Record, Testnet2Components, Transaction},
 };
 use snarkvm_algorithms::{commitment_tree::CommitmentMerkleTree, prelude::*};
-use snarkvm_utilities::{to_bytes_le, variable_length_integer::*, FromBytes, ToBytes};
+use snarkvm_utilities::{to_bytes_le, FromBytes, ToBytes};
 
 use std::{
     fmt,
@@ -42,7 +42,7 @@ pub struct TransactionKernel<C: Testnet2Components> {
     // Old record stuff
     pub old_records: Vec<Record<C>>,
     pub old_serial_numbers: Vec<<C::AccountSignature as SignatureScheme>::PublicKey>,
-    pub old_randomizers: Vec<Vec<u8>>,
+    pub old_randomizers: Vec<<C::AccountSignature as SignatureScheme>::Randomizer>,
 
     // New record stuff
     pub new_records: Vec<Record<C>>,
@@ -54,8 +54,8 @@ pub struct TransactionKernel<C: Testnet2Components> {
     pub new_encrypted_record_hashes: Vec<<C::EncryptedRecordCRH as CRH>::Output>,
 
     // Program and local data root and randomness
-    pub program_commitment: <C::ProgramVerificationKeyCommitment as CommitmentScheme>::Output,
-    pub program_randomness: <C::ProgramVerificationKeyCommitment as CommitmentScheme>::Randomness,
+    pub program_commitment: <C::ProgramIDCommitment as CommitmentScheme>::Output,
+    pub program_randomness: <C::ProgramIDCommitment as CommitmentScheme>::Randomness,
 
     pub local_data_merkle_tree: CommitmentMerkleTree<C::LocalDataCommitment, C::LocalDataCRH>,
     pub local_data_commitment_randomizers: Vec<<C::LocalDataCommitment as CommitmentScheme>::Randomness>,
@@ -97,7 +97,6 @@ impl<C: Testnet2Components> ToBytes for TransactionKernel<C> {
         }
 
         for old_randomizer in &self.old_randomizers {
-            variable_length_integer(old_randomizer.len() as u64).write_le(&mut writer)?;
             old_randomizer.write_le(&mut writer)?;
         }
 
@@ -147,8 +146,6 @@ impl<C: Testnet2Components> ToBytes for TransactionKernel<C> {
 impl<C: Testnet2Components> FromBytes for TransactionKernel<C> {
     #[inline]
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
-        let system_parameters = SystemParameters::<C>::load().expect("Could not load system parameters");
-
         // Read old record components
 
         let mut old_records = vec![];
@@ -166,14 +163,8 @@ impl<C: Testnet2Components> FromBytes for TransactionKernel<C> {
 
         let mut old_randomizers = vec![];
         for _ in 0..C::NUM_INPUT_RECORDS {
-            let num_bytes = read_variable_length_integer(&mut reader)?;
-            let mut randomizer = vec![];
-            for _ in 0..num_bytes {
-                let byte: u8 = FromBytes::read_le(&mut reader)?;
-                randomizer.push(byte);
-            }
-
-            old_randomizers.push(randomizer);
+            let old_randomizer: <C::AccountSignature as SignatureScheme>::Randomizer = FromBytes::read_le(&mut reader)?;
+            old_randomizers.push(old_randomizer);
         }
 
         // Read new record components
@@ -217,14 +208,13 @@ impl<C: Testnet2Components> FromBytes for TransactionKernel<C> {
 
         // Read transaction components
 
-        let program_commitment: <C::ProgramVerificationKeyCommitment as CommitmentScheme>::Output =
-            FromBytes::read_le(&mut reader)?;
-        let program_randomness: <C::ProgramVerificationKeyCommitment as CommitmentScheme>::Randomness =
+        let program_commitment: <C::ProgramIDCommitment as CommitmentScheme>::Output = FromBytes::read_le(&mut reader)?;
+        let program_randomness: <C::ProgramIDCommitment as CommitmentScheme>::Randomness =
             FromBytes::read_le(&mut reader)?;
 
         let local_data_merkle_tree = CommitmentMerkleTree::<C::LocalDataCommitment, C::LocalDataCRH>::from_bytes(
             &mut reader,
-            system_parameters.local_data_crh.clone(),
+            C::local_data_crh().clone(),
         )
         .expect("Could not load local data merkle tree");
 

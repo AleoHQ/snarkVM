@@ -24,8 +24,8 @@ use snarkvm_r1cs::{errors::SynthesisError, ConstraintSystem};
 /// for a full tree, so it hashes the leaves until there is only one element.
 pub fn compute_root<H: CRH, HG: MaskedCRHGadget<H, F>, F: PrimeField, TB: ToBytesGadget<F>, CS: ConstraintSystem<F>>(
     mut cs: CS,
-    parameters: &HG::ParametersGadget,
-    mask_parameters: &HG::ParametersGadget,
+    parameters: &HG,
+    mask_parameters: &HG::MaskParametersGadget,
     mask: &TB,
     leaves: &[HG::OutputGadget],
 ) -> Result<HG::OutputGadget, SynthesisError> {
@@ -63,10 +63,10 @@ pub fn compute_root<H: CRH, HG: MaskedCRHGadget<H, F>, F: PrimeField, TB: ToByte
 
 pub(crate) fn hash_inner_node_gadget<H, HG, F, TB, CS>(
     mut cs: CS,
-    parameters: &HG::ParametersGadget,
+    parameters: &HG,
     left_child: &TB,
     right_child: &TB,
-    mask_parameters: &HG::ParametersGadget,
+    mask_parameters: &HG::MaskParametersGadget,
     mask: Vec<UInt8>,
 ) -> Result<HG::OutputGadget, SynthesisError>
 where
@@ -80,5 +80,5 @@ where
     let right_bytes = right_child.to_bytes(&mut cs.ns(|| "right_to_bytes"))?;
     let bytes = [left_bytes, right_bytes].concat();
 
-    HG::check_evaluation_gadget_masked(cs, parameters, bytes, mask_parameters, mask)
+    parameters.check_evaluation_gadget_masked(cs, bytes, mask_parameters, mask)
 }

@@ -17,32 +17,29 @@
 use core::borrow::Borrow;
 use std::marker::PhantomData;
 
-use snarkvm_fields::{PoseidonMDSField, PrimeField, ToConstraintField};
+use snarkvm_algorithms::Prepare;
+use snarkvm_fields::{PrimeField, ToConstraintField};
 use snarkvm_gadgets::{
-    bits::ToBytesGadget,
     fields::FpGadget,
-    integers::uint::UInt8,
-    traits::{
-        alloc::{AllocBytesGadget, AllocGadget},
-        fields::ToConstraintFieldGadget,
-    },
+    traits::{alloc::AllocGadget, fields::ToConstraintFieldGadget},
 };
-use snarkvm_polycommit::{PCCheckVar, PrepareGadget};
+use snarkvm_polycommit::PCCheckVar;
 use snarkvm_r1cs::{ConstraintSystem, SynthesisError};
-use snarkvm_utilities::{to_bytes_le, FromBytes, ToBytes};
+use snarkvm_utilities::{to_bytes_le, ToBytes};
 
 use crate::{
-    constraints::{verifier::MarlinVerificationGadget, verifier_key::CircuitVerifyingKeyVar},
+    constraints::verifier::MarlinVerificationGadget,
     marlin::{CircuitVerifyingKey, PreparedCircuitVerifyingKey},
     FiatShamirRng,
     FiatShamirRngVar,
     PolynomialCommitment,
 };
+use snarkvm_algorithms::crypto_hash::PoseidonDefaultParametersField;
 
 /// The prepared circuit verifying key gadget
 pub struct PreparedCircuitVerifyingKeyVar<
     TargetField: PrimeField,
-    BaseField: PrimeField + PoseidonMDSField,
+    BaseField: PrimeField + PoseidonDefaultParametersField,
     PC: PolynomialCommitment<TargetField>,
     PCG: PCCheckVar<TargetField, PC, BaseField>,
     PR: FiatShamirRng<TargetField, BaseField>,
@@ -63,12 +60,12 @@ pub struct PreparedCircuitVerifyingKeyVar<
     /// The Fiat-Shamir Rng
     pub fs_rng: R,
 
-    pr: PhantomData<PR>,
+    pub pr: PhantomData<PR>,
 }
 
 impl<
     TargetField: PrimeField,
-    BaseField: PrimeField + PoseidonMDSField,
+    BaseField: PrimeField + PoseidonDefaultParametersField,
     PC: PolynomialCommitment<TargetField>,
     PCG: PCCheckVar<TargetField, PC, BaseField>,
     PR: FiatShamirRng<TargetField, BaseField>,
@@ -89,74 +86,11 @@ impl<
     }
 }
 
-impl<TargetField, BaseField, PC, PCG, PR, R> PreparedCircuitVerifyingKeyVar<TargetField, BaseField, PC, PCG, PR, R>
-where
-    TargetField: PrimeField,
-    BaseField: PrimeField + PoseidonMDSField,
-    PC: PolynomialCommitment<TargetField>,
-    PCG: PCCheckVar<TargetField, PC, BaseField>,
-    PR: FiatShamirRng<TargetField, BaseField>,
-    R: FiatShamirRngVar<TargetField, BaseField, PR>,
-    PC::Commitment: ToConstraintField<BaseField>,
-    PCG::VerifierKeyVar: ToConstraintFieldGadget<BaseField>,
-    PCG::CommitmentVar: ToConstraintFieldGadget<BaseField>,
-{
-    /// Returns an instance of a `PreparedCircuitVerifyingKeyGadget`.
-    pub fn prepare<CS: ConstraintSystem<BaseField>>(
-        mut cs: CS,
-        vk: &CircuitVerifyingKeyVar<TargetField, BaseField, PC, PCG>,
-    ) -> Result<Self, SynthesisError> {
-        let mut fs_rng_raw = PR::new();
-        fs_rng_raw.absorb_bytes(&to_bytes_le![
-            &MarlinVerificationGadget::<TargetField, BaseField, PC, PCG>::PROTOCOL_NAME
-        ]?);
-
-        let index_vk_hash = {
-            let mut vk_hash_rng = PR::new();
-
-            let mut vk_elems = Vec::<BaseField>::new();
-            vk.origin_verifier_key
-                .circuit_commitments
-                .iter()
-                .for_each(|index_comm| {
-                    vk_elems.append(&mut index_comm.to_field_elements().unwrap());
-                });
-            vk_hash_rng.absorb_native_field_elements(&vk_elems);
-            vk_hash_rng.squeeze_native_field_elements(1).unwrap()
-        };
-
-        fs_rng_raw.absorb_native_field_elements(&index_vk_hash);
-
-        let fs_rng = R::constant(cs.ns(|| "fs_rng_raw"), &fs_rng_raw);
-
-        let mut prepared_index_comms = Vec::<PCG::PreparedCommitmentVar>::new();
-        for (i, comm) in vk.index_comms.iter().enumerate() {
-            prepared_index_comms.push(PCG::PreparedCommitmentVar::prepare(
-                cs.ns(|| format!("prepare_{}", i)),
-                comm,
-            )?);
-        }
-
-        let prepared_verifier_key = PCG::PreparedVerifierKeyVar::prepare(cs.ns(|| "prepare_last"), &vk.verifier_key)?;
-
-        Ok(Self {
-            domain_h_size: vk.domain_h_size,
-            domain_k_size: vk.domain_k_size,
-            domain_h_size_gadget: vk.domain_h_size_gadget.clone(),
-            domain_k_size_gadget: vk.domain_k_size_gadget.clone(),
-            prepared_index_comms,
-            prepared_verifier_key,
-            fs_rng,
-            pr: PhantomData,
-        })
-    }
-}
-
 impl<TargetField, BaseField, PC, PCG, PR, R> AllocGadget<PreparedCircuitVerifyingKey<TargetField, PC>, BaseField>
     for PreparedCircuitVerifyingKeyVar<TargetField, BaseField, PC, PCG, PR, R>
 where
     TargetField: PrimeField,
-    BaseField: PrimeField + PoseidonMDSField,
+    BaseField: PrimeField + PoseidonDefaultParametersField,
     PC: PolynomialCommitment<TargetField>,
     PCG: PCCheckVar<TargetField, PC, BaseField>,
     PR: FiatShamirRng<TargetField, BaseField>,
@@ -233,131 +167,23 @@ where
     }
 
     #[inline]
-    fn alloc<FN, T, CS: ConstraintSystem<BaseField>>(mut cs: CS, value_gen: FN) -> Result<Self, SynthesisError>
+    fn alloc<FN, T, CS: ConstraintSystem<BaseField>>(_cs: CS, _value_gen: FN) -> Result<Self, SynthesisError>
     where
         FN: FnOnce() -> Result<T, SynthesisError>,
         T: Borrow<PreparedCircuitVerifyingKey<TargetField, PC>>,
     {
-        let tmp = value_gen()?;
-        let obj = tmp.borrow();
-
-        let mut prepared_index_comms = Vec::<PCG::PreparedCommitmentVar>::new();
-        for (i, index_comm) in obj.prepared_index_comms.iter().enumerate() {
-            prepared_index_comms.push(PCG::PreparedCommitmentVar::alloc(
-                cs.ns(|| format!("alloc_index_commitment_{}", i)),
-                || Ok(index_comm),
-            )?);
-        }
-
-        let prepared_verifier_key =
-            PCG::PreparedVerifierKeyVar::alloc(cs.ns(|| "alloc_pvk"), || Ok(&obj.prepared_verifier_key))?;
-
-        let mut vk_elems = Vec::<BaseField>::new();
-        obj.orig_vk.circuit_commitments.iter().for_each(|index_comm| {
-            vk_elems.append(&mut index_comm.to_field_elements().unwrap());
-        });
-
-        let index_vk_hash = {
-            let mut vk_hash_rng = PR::new();
-
-            vk_hash_rng.absorb_native_field_elements(&vk_elems);
-            FpGadget::<BaseField>::alloc(cs.ns(|| "alloc_vk_hash"), || {
-                Ok(vk_hash_rng.squeeze_native_field_elements(1).unwrap()[0])
-            })?
-        };
-
-        let mut fs_rng_raw = PR::new();
-        fs_rng_raw.absorb_bytes(&to_bytes_le![
-            &MarlinVerificationGadget::<TargetField, BaseField, PC, PCG>::PROTOCOL_NAME
-        ]?);
-
-        let fs_rng = {
-            let mut fs_rng = R::constant(cs.ns(|| "fs_rng_raw"), &fs_rng_raw);
-            fs_rng.absorb_native_field_elements(cs.ns(|| "absorb"), &[index_vk_hash])?;
-            fs_rng
-        };
-
-        let domain_h_size_gadget = FpGadget::<BaseField>::alloc(cs.ns(|| "domain_h_size_gadget"), || {
-            Ok(BaseField::from(obj.domain_h_size as u128))
-        })?;
-        let domain_k_size_gadget = FpGadget::<BaseField>::alloc(cs.ns(|| "domain_k_size_gadget"), || {
-            Ok(BaseField::from(obj.domain_k_size as u128))
-        })?;
-
-        Ok(Self {
-            domain_h_size: obj.domain_h_size,
-            domain_k_size: obj.domain_k_size,
-            domain_h_size_gadget,
-            domain_k_size_gadget,
-            prepared_index_comms,
-            prepared_verifier_key,
-            fs_rng,
-            pr: PhantomData,
-        })
+        unimplemented!();
+        // the overhead is not worthwhile
     }
 
     #[inline]
-    fn alloc_input<FN, T, CS: ConstraintSystem<BaseField>>(mut cs: CS, value_gen: FN) -> Result<Self, SynthesisError>
+    fn alloc_input<FN, T, CS: ConstraintSystem<BaseField>>(_cs: CS, _value_gen: FN) -> Result<Self, SynthesisError>
     where
         FN: FnOnce() -> Result<T, SynthesisError>,
         T: Borrow<PreparedCircuitVerifyingKey<TargetField, PC>>,
     {
-        let tmp = value_gen()?;
-        let obj = tmp.borrow();
-
-        let mut prepared_index_comms = Vec::<PCG::PreparedCommitmentVar>::new();
-        for (i, index_comm) in obj.prepared_index_comms.iter().enumerate() {
-            prepared_index_comms.push(PCG::PreparedCommitmentVar::alloc_input(
-                cs.ns(|| format!("alloc_input_index_commitment_{}", i)),
-                || Ok(index_comm),
-            )?);
-        }
-
-        let prepared_verifier_key =
-            PCG::PreparedVerifierKeyVar::alloc_input(cs.ns(|| "alloc_input_pvk"), || Ok(&obj.prepared_verifier_key))?;
-
-        let mut vk_elems = Vec::<BaseField>::new();
-        obj.orig_vk.circuit_commitments.iter().for_each(|index_comm| {
-            vk_elems.append(&mut index_comm.to_field_elements().unwrap());
-        });
-
-        let index_vk_hash = {
-            let mut vk_hash_rng = PR::new();
-
-            vk_hash_rng.absorb_native_field_elements(&vk_elems);
-            FpGadget::<BaseField>::alloc_input(cs.ns(|| "alloc_input_vk_hash"), || {
-                Ok(vk_hash_rng.squeeze_native_field_elements(1).unwrap()[0])
-            })?
-        };
-
-        let mut fs_rng_raw = PR::new();
-        fs_rng_raw.absorb_bytes(&to_bytes_le![
-            &MarlinVerificationGadget::<TargetField, BaseField, PC, PCG>::PROTOCOL_NAME
-        ]?);
-
-        let fs_rng = {
-            let mut fs_rng = R::constant(cs.ns(|| "fs_rng_raw"), &fs_rng_raw);
-            fs_rng.absorb_native_field_elements(cs.ns(|| "absorb"), &[index_vk_hash])?;
-            fs_rng
-        };
-
-        let domain_h_size_gadget = FpGadget::<BaseField>::alloc_input(cs.ns(|| "domain_h_size_gadget"), || {
-            Ok(BaseField::from(obj.domain_h_size as u128))
-        })?;
-        let domain_k_size_gadget = FpGadget::<BaseField>::alloc_input(cs.ns(|| "domain_k_size_gadget"), || {
-            Ok(BaseField::from(obj.domain_k_size as u128))
-        })?;
-
-        Ok(Self {
-            domain_h_size: obj.domain_h_size,
-            domain_k_size: obj.domain_k_size,
-            domain_h_size_gadget,
-            domain_k_size_gadget,
-            prepared_index_comms,
-            prepared_verifier_key,
-            fs_rng,
-            pr: PhantomData,
-        })
+        unimplemented!();
+        // the overhead is not worthwhile
     }
 }
 
@@ -365,7 +191,7 @@ impl<TargetField, BaseField, PC, PCG, PR, R> AllocGadget<CircuitVerifyingKey<Tar
     for PreparedCircuitVerifyingKeyVar<TargetField, BaseField, PC, PCG, PR, R>
 where
     TargetField: PrimeField,
-    BaseField: PrimeField + PoseidonMDSField,
+    BaseField: PrimeField + PoseidonDefaultParametersField,
     PC: PolynomialCommitment<TargetField>,
     PCG: PCCheckVar<TargetField, PC, BaseField>,
     PR: FiatShamirRng<TargetField, BaseField>,
@@ -383,7 +209,7 @@ where
     {
         let tmp = value_gen()?;
         let vk = tmp.borrow();
-        let prepared_vk = PreparedCircuitVerifyingKey::prepare(&vk);
+        let prepared_vk = vk.prepare();
 
         Self::alloc_constant(cs, || Ok(prepared_vk))
     }
@@ -397,7 +223,7 @@ where
     {
         let tmp = value_gen()?;
         let vk = tmp.borrow();
-        let prepared_vk = PreparedCircuitVerifyingKey::prepare(&vk);
+        let prepared_vk = vk.prepare();
 
         Self::alloc(cs, || Ok(prepared_vk))
     }
@@ -410,100 +236,9 @@ where
     {
         let tmp = value_gen()?;
         let vk = tmp.borrow();
-        let prepared_vk = PreparedCircuitVerifyingKey::prepare(&vk);
+        let prepared_vk = vk.prepare();
 
         Self::alloc_input(cs, || Ok(prepared_vk))
-    }
-}
-
-impl<TargetField, BaseField, PC, PCG, PR, R> ToBytesGadget<BaseField>
-    for PreparedCircuitVerifyingKeyVar<TargetField, BaseField, PC, PCG, PR, R>
-where
-    TargetField: PrimeField,
-    BaseField: PrimeField + PoseidonMDSField,
-    PC: PolynomialCommitment<TargetField>,
-    PCG: PCCheckVar<TargetField, PC, BaseField>,
-    PR: FiatShamirRng<TargetField, BaseField>,
-    R: FiatShamirRngVar<TargetField, BaseField, PR>,
-    PC::VerifierKey: ToConstraintField<BaseField>,
-    PC::Commitment: ToConstraintField<BaseField>,
-    PCG::VerifierKeyVar: ToConstraintFieldGadget<BaseField>,
-    PCG::CommitmentVar: ToConstraintFieldGadget<BaseField>,
-{
-    fn to_bytes<CS: ConstraintSystem<BaseField>>(&self, mut cs: CS) -> Result<Vec<UInt8>, SynthesisError> {
-        let mut res = Vec::<UInt8>::new();
-
-        let unprepared_vk: PCG::VerifierKeyVar = self.prepared_verifier_key.clone().into();
-
-        res.append(&mut unprepared_vk.to_bytes(cs.ns(|| "to_bytes"))?);
-
-        Ok(res)
-    }
-
-    fn to_bytes_strict<CS: ConstraintSystem<BaseField>>(&self, mut cs: CS) -> Result<Vec<UInt8>, SynthesisError> {
-        let mut res = Vec::<UInt8>::new();
-
-        let unprepared_vk: PCG::VerifierKeyVar = self.prepared_verifier_key.clone().into();
-
-        res.append(&mut unprepared_vk.to_bytes_strict(cs.ns(|| "to_bytes_strict"))?);
-
-        Ok(res)
-    }
-}
-
-impl<TargetField, BaseField, PC, PCG, PR, R> AllocBytesGadget<Vec<u8>, BaseField>
-    for PreparedCircuitVerifyingKeyVar<TargetField, BaseField, PC, PCG, PR, R>
-where
-    TargetField: PrimeField,
-    BaseField: PrimeField + PoseidonMDSField,
-    PC: PolynomialCommitment<TargetField>,
-    PCG: PCCheckVar<TargetField, PC, BaseField>,
-    PR: FiatShamirRng<TargetField, BaseField>,
-    R: FiatShamirRngVar<TargetField, BaseField, PR>,
-    PC::VerifierKey: ToConstraintField<BaseField>,
-    PC::Commitment: ToConstraintField<BaseField>,
-    PCG::VerifierKeyVar: ToConstraintFieldGadget<BaseField>,
-    PCG::CommitmentVar: ToConstraintFieldGadget<BaseField>,
-{
-    #[inline]
-    fn alloc_bytes<FN, T, CS: ConstraintSystem<BaseField>>(mut cs: CS, value_gen: FN) -> Result<Self, SynthesisError>
-    where
-        FN: FnOnce() -> Result<T, SynthesisError>,
-        T: Borrow<Vec<u8>>,
-    {
-        value_gen().and_then(|vk_bytes| {
-            let circuit_vk: CircuitVerifyingKey<TargetField, PC> = FromBytes::read_le(&vk_bytes.borrow()[..])?;
-            // TODO (raychu86): Preparing the verifying key natively is more efficient, however it is currently broken.
-
-            let unprepared_vk_gadget =
-                CircuitVerifyingKeyVar::<TargetField, BaseField, PC, PCG>::alloc(cs.ns(|| "unprepared_vk"), || {
-                    Ok(circuit_vk)
-                })?;
-
-            Self::prepare(cs.ns(|| "prepare"), &unprepared_vk_gadget)
-        })
-    }
-
-    #[inline]
-    fn alloc_input_bytes<FN, T, CS: ConstraintSystem<BaseField>>(
-        mut cs: CS,
-        value_gen: FN,
-    ) -> Result<Self, SynthesisError>
-    where
-        FN: FnOnce() -> Result<T, SynthesisError>,
-        T: Borrow<Vec<u8>>,
-    {
-        value_gen().and_then(|vk_bytes| {
-            let circuit_vk: CircuitVerifyingKey<TargetField, PC> = FromBytes::read_le(&vk_bytes.borrow()[..])?;
-            // TODO (raychu86): Preparing the verifying key natively is more efficient, however it is currently broken.
-
-            let unprepared_vk_gadget = CircuitVerifyingKeyVar::<TargetField, BaseField, PC, PCG>::alloc_input(
-                cs.ns(|| "unprepared_vk"),
-                || Ok(circuit_vk),
-            )?;
-
-            Self::prepare(cs.ns(|| "prepare"), &unprepared_vk_gadget)
-        })
     }
 }
 
@@ -515,7 +250,11 @@ mod test {
         bls12_377::{Bls12_377, Fq, Fr},
         bw6_761::BW6_761,
     };
-    use snarkvm_gadgets::{curves::bls12_377::PairingGadget as Bls12_377PairingGadget, traits::eq::EqGadget};
+    use snarkvm_gadgets::{
+        curves::bls12_377::PairingGadget as Bls12_377PairingGadget,
+        traits::eq::EqGadget,
+        PrepareGadget,
+    };
     use snarkvm_polycommit::marlin_pc::{marlin_kzg10::MarlinKZG10Gadget, MarlinKZG10};
     use snarkvm_r1cs::TestConstraintSystem;
     use snarkvm_utilities::rand::{test_rng, UniformRand};
@@ -529,6 +268,7 @@ mod test {
     };
 
     use super::*;
+    use crate::constraints::verifier_key::CircuitVerifyingKeyVar;
 
     type FS = FiatShamirAlgebraicSpongeRng<Fr, Fq, PoseidonSponge<Fq>>;
     type FSG = FiatShamirAlgebraicSpongeRngVar<Fr, Fq, PoseidonSponge<Fq>, PoseidonSpongeVar<Fq>>;
@@ -567,14 +307,15 @@ mod test {
 
         let (_circuit_pk, circuit_vk) = MarlinInst::circuit_setup(&universal_srs, &circ).unwrap();
 
-        let prepared_circuit_vk = PreparedCircuitVerifyingKey::prepare(&circuit_vk);
+        let prepared_circuit_vk = circuit_vk.prepare();
 
         // Allocate the circuit vk gadget.
-        let prepared_circuit_vk_gadget = PreparedCircuitVerifyingKeyVar::<_, _, _, MultiPCVar, FS, FSG>::alloc(
-            cs.ns(|| "alloc_prepared_vk"),
-            || Ok(prepared_circuit_vk.clone()),
-        )
-        .unwrap();
+        let prepared_circuit_vk_gadget =
+            PreparedCircuitVerifyingKeyVar::<_, _, _, MultiPCVar, FS, FSG>::alloc_constant(
+                cs.ns(|| "alloc_prepared_vk"),
+                || Ok(prepared_circuit_vk.clone()),
+            )
+            .unwrap();
 
         // Enforce that the native vk and vk gadget elements are equivalent.
 
@@ -644,16 +385,15 @@ mod test {
 
         let (_circuit_pk, circuit_vk) = MarlinInst::circuit_setup(&universal_srs, &circ).unwrap();
 
-        let prepared_circuit_vk = PreparedCircuitVerifyingKey::prepare(&circuit_vk);
+        let prepared_circuit_vk = circuit_vk.prepare();
 
         // Allocate the circuit vk gadget.
         let circuit_vk_gadget =
             CircuitVerifyingKeyVar::<_, _, _, MultiPCVar>::alloc(cs.ns(|| "alloc_vk"), || Ok(circuit_vk.clone()))
                 .unwrap();
 
-        let prepared_circuit_vk_gadget =
-            PreparedCircuitVerifyingKeyVar::<_, _, _, _, FS, FSG>::prepare(cs.ns(|| "prepare"), &circuit_vk_gadget)
-                .unwrap();
+        let prepared_circuit_vk_gadget: PreparedCircuitVerifyingKeyVar<_, _, _, _, FS, FSG> =
+            circuit_vk_gadget.prepare(cs.ns(|| "prepare")).unwrap();
 
         // Enforce that the native vk and vk gadget elements are equivalent.
 
