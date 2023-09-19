@@ -21,6 +21,7 @@ use crate::{
         ahp::{AHPError, AHPForR1CS, CircuitId, EvaluationsProvider},
         proof,
         prover,
+        verifier,
         witness_label,
         CircuitProvingKey,
         CircuitVerifyingKey,
@@ -332,7 +333,7 @@ where
         }
         let fft_precomp = &universal_prover.fft_precomputation;
         let ifft_precomp = &universal_prover.ifft_precomputation;
-        let prover_state =
+        let mut prover_state =
             AHPForR1CS::<_, MM>::init_prover(&circuits_to_constraints, fft_precomp, ifft_precomp, zk_rng)?;
 
         // extract information from the prover key and state to consume in further calculations
@@ -367,7 +368,7 @@ where
         // --------------------------------------------------------------------
         // First round
 
-        let prover_state = AHPForR1CS::<_, MM>::prover_first_round(prover_state, zk_rng)?;
+        prover_state.first_round(zk_rng)?;
 
         let first_round_comm_time = start_timer!(|| "Committing to first round polys");
         let (first_commitments, first_commitment_randomnesses) = {
@@ -382,7 +383,7 @@ where
 
         Self::absorb_labeled(&first_commitments, &mut sponge);
 
-        let (verifier_first_message, verifier_state) = AHPForR1CS::<_, MM>::verifier_first_round(
+        prover_state.verifier_first_round(
             &batch_sizes,
             &circuit_infos,
             prover_state.max_constraint_domain,
@@ -390,13 +391,13 @@ where
             prover_state.max_non_zero_domain,
             &mut sponge,
         )?;
+
         // --------------------------------------------------------------------
 
         // --------------------------------------------------------------------
         // Second round
 
-        let (second_oracles, prover_state) =
-            AHPForR1CS::<_, MM>::prover_second_round(&verifier_first_message, prover_state, zk_rng)?;
+        let second_oracles = prover_state.second_round()?;
 
         let second_round_comm_time = start_timer!(|| "Committing to second round polys");
         let (second_commitments, second_commitment_randomnesses) = SonicKZG10::<E, FS>::commit(
@@ -408,19 +409,13 @@ where
 
         Self::absorb_labeled(&second_commitments, &mut sponge);
 
-        let (verifier_second_msg, verifier_state) =
-            AHPForR1CS::<_, MM>::verifier_second_round(verifier_state, &mut sponge)?;
+        prover_state.verifier_second_round(&mut sponge)?;
         // --------------------------------------------------------------------
 
         // --------------------------------------------------------------------
         // Third round
 
-        let (prover_third_message, third_oracles, prover_state) = AHPForR1CS::<_, MM>::prover_third_round(
-            &verifier_first_message,
-            &verifier_second_msg,
-            prover_state,
-            zk_rng,
-        )?;
+        let (prover_third_message, third_oracles) = prover_state.third_round()?;
 
         let third_round_comm_time = start_timer!(|| "Committing to third round polys");
         let (third_commitments, third_commitment_randomnesses) = SonicKZG10::<E, FS>::commit(
@@ -436,15 +431,13 @@ where
             &mut sponge,
         );
 
-        let (verifier_third_msg, verifier_state) =
-            AHPForR1CS::<_, MM>::verifier_third_round(verifier_state, &mut sponge)?;
+        prover_state.verifier_third_round(&mut sponge)?;
         // --------------------------------------------------------------------
 
         // --------------------------------------------------------------------
         // Fourth round
 
-        let (prover_fourth_message, fourth_oracles, mut prover_state) =
-            AHPForR1CS::<_, MM>::prover_fourth_round(&verifier_second_msg, &verifier_third_msg, prover_state, zk_rng)?;
+        let (prover_fourth_message, fourth_oracles) = prover_state.fourth_round()?;
 
         let fourth_round_comm_time = start_timer!(|| "Committing to fourth round polys");
         let (fourth_commitments, fourth_commitment_randomnesses) = SonicKZG10::<E, FS>::commit(
@@ -456,8 +449,7 @@ where
 
         Self::absorb_labeled_with_sums(&fourth_commitments, &prover_fourth_message.sums, &mut sponge);
 
-        let (verifier_fourth_msg, verifier_state) =
-            AHPForR1CS::<_, MM>::verifier_fourth_round(verifier_state, &mut sponge)?;
+        prover_state.verifier_fourth_round(&mut sponge)?;
         // --------------------------------------------------------------------
 
         // We take out values from state before they are consumed.
@@ -469,7 +461,8 @@ where
 
         // --------------------------------------------------------------------
         // Fifth round
-        let fifth_oracles = AHPForR1CS::<_, MM>::prover_fifth_round(verifier_fourth_msg, prover_state, zk_rng)?;
+
+        let fifth_oracles = prover_state.fifth_round()?;
 
         let fifth_round_comm_time = start_timer!(|| "Committing to fifth round polys");
         let (fifth_commitments, fifth_commitment_randomnesses) = SonicKZG10::<E, FS>::commit(
@@ -481,7 +474,7 @@ where
 
         Self::absorb_labeled(&fifth_commitments, &mut sponge);
 
-        let verifier_state = AHPForR1CS::<_, MM>::verifier_fifth_round(verifier_state, &mut sponge)?;
+        prover_state.verifier_fifth_round(&mut sponge)?;
         // --------------------------------------------------------------------
 
         // Gather prover polynomials in one vector.
@@ -548,13 +541,13 @@ where
         }
 
         // Compute the AHP verifier's query set.
-        let (query_set, verifier_state) = AHPForR1CS::<_, MM>::verifier_query_set(verifier_state);
+        let query_set = prover_state.query_set();
         let lc_s = AHPForR1CS::<_, MM>::construct_linear_combinations(
             &public_inputs,
             &polynomials,
             &prover_third_message,
             &prover_fourth_message,
-            &verifier_state,
+            prover_state.verifier_state(),
         )?;
 
         let eval_time = start_timer!(|| "Evaluating linear combinations over query set");
@@ -752,14 +745,14 @@ where
         // First round
         let first_round_time = start_timer!(|| "First round");
         Self::absorb_labeled(&first_commitments, &mut sponge);
-        let (_, verifier_state) = AHPForR1CS::<_, MM>::verifier_first_round(
+        let mut verifier_state = verifier::State::<_, MM>::new(
             &batch_sizes,
             &circuit_infos,
             max_constraint_domain,
             max_variable_domain,
             max_non_zero_domain,
-            &mut sponge,
         )?;
+        verifier_state.first_round(&mut sponge)?;
         end_timer!(first_round_time);
         // --------------------------------------------------------------------
 
@@ -767,7 +760,7 @@ where
         // Second round
         let second_round_time = start_timer!(|| "Second round");
         Self::absorb_labeled(&second_commitments, &mut sponge);
-        let (_, verifier_state) = AHPForR1CS::<_, MM>::verifier_second_round(verifier_state, &mut sponge)?;
+        verifier_state.second_round(&mut sponge)?;
         end_timer!(second_round_time);
         // --------------------------------------------------------------------
 
@@ -779,7 +772,7 @@ where
             &proof.third_msg.sums.clone().into_iter().flatten().collect_vec(),
             &mut sponge,
         );
-        let (_, verifier_state) = AHPForR1CS::<_, MM>::verifier_third_round(verifier_state, &mut sponge)?;
+        verifier_state.third_round(&mut sponge)?;
         end_timer!(third_round_time);
         // --------------------------------------------------------------------
 
@@ -788,7 +781,7 @@ where
         let fourth_round_time = start_timer!(|| "Fourth round");
 
         Self::absorb_labeled_with_sums(&fourth_commitments, &proof.fourth_msg.sums, &mut sponge);
-        let (_, verifier_state) = AHPForR1CS::<_, MM>::verifier_fourth_round(verifier_state, &mut sponge)?;
+        verifier_state.fourth_round(&mut sponge)?;
         end_timer!(fourth_round_time);
         // --------------------------------------------------------------------
 
@@ -797,7 +790,7 @@ where
         let fifth_round_time = start_timer!(|| "Fifth round");
 
         Self::absorb_labeled(&fifth_commitments, &mut sponge);
-        let verifier_state = AHPForR1CS::<_, MM>::verifier_fifth_round(verifier_state, &mut sponge)?;
+        verifier_state.fifth_round(&mut sponge)?;
         end_timer!(fifth_round_time);
         // --------------------------------------------------------------------
 
@@ -819,7 +812,7 @@ where
             .collect();
 
         let query_set_time = start_timer!(|| "Constructing query set");
-        let (query_set, verifier_state) = AHPForR1CS::<_, MM>::verifier_query_set(verifier_state);
+        let query_set = verifier_state.query_set();
         end_timer!(query_set_time);
 
         sponge.absorb_nonnative_field_elements(proof.evaluations.to_field_elements());
@@ -854,7 +847,7 @@ where
             &evaluations,
             &proof.third_msg,
             &proof.fourth_msg,
-            &verifier_state,
+            verifier_state,
         )?;
         end_timer!(lc_time);
 
@@ -870,9 +863,9 @@ where
         )?;
         end_timer!(pc_time);
 
+        #[cfg(debug_assertions)]
         if !evaluations_are_correct {
-            #[cfg(debug_assertions)]
-            eprintln!("SonicKZG10::Check failed using final challenge: {:?}", verifier_state.gamma);
+            eprintln!("SonicKZG10::Check failed");
         }
 
         end_timer!(verifier_time, || format!(

@@ -23,13 +23,8 @@ use crate::{
         SparsePolynomial,
     },
     polycommit::sonic_pc::{LabeledPolynomial, PolynomialInfo, PolynomialLabel},
-    snark::varuna::{
-        ahp::{AHPError, AHPForR1CS},
-        prover,
-        witness_label,
-        CircuitId,
-        SNARKMode,
-    },
+    snark::varuna::{ahp::AHPError, prover, verifier, witness_label, AHPForR1CS, CircuitId, CircuitInfo, SNARKMode},
+    AlgebraicSponge,
 };
 use itertools::Itertools;
 use rand_core::RngCore;
@@ -60,17 +55,15 @@ impl<F: PrimeField, MM: SNARKMode> AHPForR1CS<F, MM> {
         }
         polynomials.into_iter().map(|info| (info.label().into(), info)).collect()
     }
+}
 
-    /// Output the first round message and the next state.
-    pub fn prover_first_round<'a, R: RngCore>(
-        mut state: prover::State<'a, F, MM>,
-        rng: &mut R,
-    ) -> Result<prover::State<'a, F, MM>, AHPError> {
+impl<'a, F: PrimeField, MM: SNARKMode> prover::State<'a, F, MM> {
+    pub fn first_round<R: RngCore>(&mut self, rng: &mut R) -> Result<(), AHPError> {
         let round_time = start_timer!(|| "AHP::Prover::FirstRound");
-        let fft_precomp = state.fft_precomputation;
-        let ifft_precomp = state.ifft_precomputation;
-        let mut job_pool = snarkvm_utilities::ExecutionPool::with_capacity(state.total_instances);
-        for (circuit, circuit_state) in state.circuit_specific_states.iter_mut() {
+        let fft_precomp = self.fft_precomputation;
+        let ifft_precomp = self.ifft_precomputation;
+        let mut job_pool = snarkvm_utilities::ExecutionPool::with_capacity(self.total_instances);
+        for (circuit, circuit_state) in self.circuit_specific_states.iter_mut() {
             let batch_size = circuit_state.batch_size;
 
             let private_variables = core::mem::take(&mut circuit_state.private_variables);
@@ -90,21 +83,21 @@ impl<F: PrimeField, MM: SNARKMode> AHPForR1CS<F, MM> {
         }
         let mut batches =
             job_pool.execute_all().into_iter().map(|w_poly| prover::WitnessPoly(w_poly)).collect::<Vec<_>>();
-        assert_eq!(batches.len(), state.total_instances);
+        assert_eq!(batches.len(), self.total_instances);
 
         let mut circuit_specific_batches = BTreeMap::new();
-        for (circuit, state) in state.circuit_specific_states.iter_mut() {
+        for (circuit, state) in self.circuit_specific_states.iter_mut() {
             let batches = batches.drain(0..state.batch_size).collect_vec();
             circuit_specific_batches.insert(circuit.id, batches);
             end_timer!(round_time);
         }
-        let mask_poly = MM::ZK.then(|| Self::calculate_mask_poly(state.max_variable_domain, rng));
+        let mask_poly = MM::ZK.then(|| Self::calculate_mask_poly(self.max_variable_domain, rng));
         let oracles = prover::FirstOracles { batches: circuit_specific_batches, mask_poly };
-        assert!(oracles.matches_info(&Self::first_round_polynomial_info(
-            state.circuit_specific_states.iter().map(|(c, s)| (&c.id, &s.batch_size))
+        assert!(oracles.matches_info(&AHPForR1CS::<F, MM>::first_round_polynomial_info(
+            self.circuit_specific_states.iter().map(|(c, s)| (&c.id, &s.batch_size))
         )));
-        state.first_round_oracles = Some(oracles);
-        Ok(state)
+        self.first_round_oracles = Some(oracles);
+        Ok(())
     }
 
     fn calculate_mask_poly<R: RngCore>(variable_domain: EvaluationDomain<F>, rng: &mut R) -> LabeledPolynomial<F> {
@@ -132,7 +125,7 @@ impl<F: PrimeField, MM: SNARKMode> AHPForR1CS<F, MM> {
         LabeledPolynomial::new("mask_poly".to_string(), mask_poly, None, None)
     }
 
-    fn calculate_w<'a>(
+    fn calculate_w(
         label: String,
         private_variables: Vec<F>,
         x_poly: DensePolynomial<F>,
@@ -167,6 +160,27 @@ impl<F: PrimeField, MM: SNARKMode> AHPForR1CS<F, MM> {
         assert!(w_poly.degree() < variable_domain.size() - input_domain.size());
         end_timer!(w_poly_time);
         LabeledPolynomial::new(label, w_poly, None, Self::zk_bound())
+    }
+
+    pub fn verifier_first_round<Fq: PrimeField, R: AlgebraicSponge<Fq, 2>>(
+        &mut self,
+        batch_sizes: &BTreeMap<CircuitId, usize>,
+        circuit_infos: &BTreeMap<CircuitId, &CircuitInfo>,
+        max_constraint_domain: EvaluationDomain<F>,
+        max_variable_domain: EvaluationDomain<F>,
+        max_non_zero_domain: EvaluationDomain<F>,
+        fs_rng: &mut R,
+    ) -> Result<(), AHPError> {
+        let mut verifier_state = verifier::State::<F, MM>::new(
+            batch_sizes,
+            circuit_infos,
+            max_constraint_domain,
+            max_variable_domain,
+            max_non_zero_domain,
+        )?;
+        verifier_state.first_round(fs_rng)?;
+        self.verifier_state = Some(verifier_state);
+        Ok(())
     }
 }
 

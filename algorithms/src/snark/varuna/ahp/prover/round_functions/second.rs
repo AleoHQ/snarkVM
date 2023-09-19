@@ -23,16 +23,10 @@ use crate::{
         Evaluations as EvaluationsOnDomain,
     },
     polycommit::sonic_pc::{LabeledPolynomial, PolynomialInfo, PolynomialLabel},
-    snark::varuna::{
-        ahp::{verifier, AHPForR1CS},
-        prover,
-        witness_label,
-        CircuitId,
-        SNARKMode,
-    },
+    snark::varuna::{ahp::verifier, prover, witness_label, AHPError, AHPForR1CS, SNARKMode},
+    AlgebraicSponge,
 };
-use anyhow::Result;
-use rand_core::RngCore;
+use anyhow::{anyhow, Result};
 use snarkvm_fields::PrimeField;
 use snarkvm_utilities::{cfg_into_iter, cfg_iter_mut, cfg_reduce, ExecutionPool};
 
@@ -49,44 +43,40 @@ impl<F: PrimeField, MM: SNARKMode> AHPForR1CS<F, MM> {
     pub fn second_round_polynomial_info() -> BTreeMap<PolynomialLabel, PolynomialInfo> {
         [PolynomialInfo::new("h_0".into(), None, None)].into_iter().map(|info| (info.label().into(), info)).collect()
     }
+}
 
-    /// Output the second round message and the next state.
-    pub fn prover_second_round<'a, R: RngCore>(
-        verifier_message: &verifier::FirstMessage<F>,
-        mut state: prover::State<'a, F, MM>,
-        _r: &mut R,
-    ) -> Result<(prover::SecondOracles<F>, prover::State<'a, F, MM>)> {
+impl<'a, F: PrimeField, MM: SNARKMode> prover::State<'a, F, MM> {
+    pub fn second_round(&mut self) -> Result<prover::SecondOracles<F>> {
         let round_time = start_timer!(|| "AHP::Prover::SecondRound");
 
         let zk_bound = Self::zk_bound();
 
-        let max_constraint_domain = state.max_constraint_domain;
+        let max_constraint_domain = self.max_constraint_domain;
 
-        let verifier::FirstMessage { batch_combiners, .. } = verifier_message;
-
-        let h_0 = Self::calculate_rowcheck_witness(&mut state, batch_combiners)?;
+        let h_0 = self.calculate_rowcheck_witness()?;
 
         assert!(h_0.degree() <= 2 * max_constraint_domain.size() + 2 * zk_bound.unwrap_or(0) - 2);
 
         let oracles = prover::SecondOracles { h_0: LabeledPolynomial::new("h_0", h_0, None, None) };
-        assert!(oracles.matches_info(&Self::second_round_polynomial_info()));
+        assert!(oracles.matches_info(&AHPForR1CS::<F, MM>::second_round_polynomial_info()));
 
         end_timer!(round_time);
 
-        Ok((oracles, state))
+        Ok(oracles)
     }
 
-    fn calculate_rowcheck_witness(
-        state: &mut prover::State<F, MM>,
-        batch_combiners: &BTreeMap<CircuitId, verifier::BatchCombiners<F>>,
-    ) -> Result<DensePolynomial<F>> {
-        let mut job_pool = ExecutionPool::with_capacity(state.circuit_specific_states.len());
-        let max_constraint_domain = state.max_constraint_domain;
+    fn calculate_rowcheck_witness(&mut self) -> Result<DensePolynomial<F>> {
+        let verifier_state = self.verifier_state.as_ref().ok_or(anyhow!("missing verifier state"))?;
+        let verifier::FirstMessage { batch_combiners, .. } =
+            verifier_state.first_round_message.as_ref().ok_or(anyhow!("missing verifier message"))?;
 
-        let fft_precomp = state.fft_precomputation;
-        let ifft_precomp = state.ifft_precomputation;
+        let fft_precomp = &self.fft_precomputation;
+        let ifft_precomp = &self.ifft_precomputation;
 
-        for (circuit, circuit_specific_state) in state.circuit_specific_states.iter_mut() {
+        let mut job_pool = ExecutionPool::with_capacity(self.circuit_specific_states.len());
+        let max_constraint_domain = self.max_constraint_domain;
+
+        for (circuit, circuit_specific_state) in self.circuit_specific_states.iter_mut() {
             let z_a = circuit_specific_state.z_a.take().unwrap();
             let z_b = circuit_specific_state.z_b.take().unwrap();
             let z_c = circuit_specific_state.z_c.take().unwrap();
@@ -171,5 +161,13 @@ impl<F: PrimeField, MM: SNARKMode> AHPForR1CS<F, MM> {
         end_timer!(poly_time);
 
         poly
+    }
+
+    pub fn verifier_second_round<Fq: PrimeField, R: AlgebraicSponge<Fq, 2>>(
+        &mut self,
+        fs_rng: &mut R,
+    ) -> Result<(), AHPError> {
+        self.verifier_state.as_mut().unwrap().second_round(fs_rng)?;
+        Ok(())
     }
 }

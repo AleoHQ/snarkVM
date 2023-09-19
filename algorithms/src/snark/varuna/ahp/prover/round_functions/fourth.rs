@@ -22,21 +22,22 @@ use crate::{
     },
     polycommit::sonic_pc::{LabeledPolynomial, PolynomialInfo, PolynomialLabel},
     snark::varuna::{
-        ahp::{indexer::CircuitInfo, verifier, AHPError, AHPForR1CS, CircuitId},
+        ahp::{indexer::CircuitInfo, verifier, AHPError, CircuitId},
         matrices::MatrixEvals,
         prover,
         witness_label,
+        AHPForR1CS,
         SNARKMode,
     },
+    AlgebraicSponge,
 };
 use snarkvm_fields::{batch_inversion_and_mul, PrimeField};
 use snarkvm_utilities::{cfg_iter, cfg_iter_mut, ExecutionPool};
+use std::collections::BTreeMap;
 
 use anyhow::Result;
 use core::convert::TryInto;
 use itertools::Itertools;
-use rand_core::RngCore;
-use std::collections::BTreeMap;
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
@@ -72,28 +73,27 @@ impl<F: PrimeField, MM: SNARKMode> AHPForR1CS<F, MM> {
             })
             .collect()
     }
+}
 
-    /// Output the fourth round message and the next state.
-    pub fn prover_fourth_round<'a, R: RngCore>(
-        second_message: &verifier::SecondMessage<F>,
-        third_message: &verifier::ThirdMessage<F>,
-        mut state: prover::State<'a, F, MM>,
-        _r: &mut R,
-    ) -> Result<(prover::FourthMessage<F>, prover::FourthOracles<F>, prover::State<'a, F, MM>), AHPError> {
+impl<'a, F: PrimeField, MM: SNARKMode> prover::State<'a, F, MM> {
+    pub fn fourth_round(&mut self) -> Result<(prover::FourthMessage<F>, prover::FourthOracles<F>), AHPError> {
         let round_time = start_timer!(|| "AHP::Prover::FourthRound");
 
-        let verifier::SecondMessage { alpha, .. } = second_message;
-        let verifier::ThirdMessage { beta } = third_message;
-        let fft_precomp = state.fft_precomputation;
-        let ifft_precomp = state.ifft_precomputation;
+        let verifier_state = self.verifier_state.as_ref().ok_or(anyhow::anyhow!("missing verifier state"))?;
+        let verifier::SecondMessage { alpha, .. } =
+            verifier_state.second_round_message.ok_or(anyhow::anyhow!("missing verifier message"))?;
+        let verifier::ThirdMessage { beta } =
+            verifier_state.third_round_message.ok_or(anyhow::anyhow!("missing verifier message"))?;
+        let fft_precomp = self.fft_precomputation;
+        let ifft_precomp = self.ifft_precomputation;
 
-        let mut pool = ExecutionPool::with_capacity(3 * state.circuit_specific_states.len());
+        let mut pool = ExecutionPool::with_capacity(3 * self.circuit_specific_states.len());
 
-        let max_non_zero_domain_size = state.max_non_zero_domain;
+        let max_non_zero_domain_size = self.max_non_zero_domain;
         let matrix_labels = ["a", "b", "c"];
-        for (&circuit, state_i) in &state.circuit_specific_states {
-            let v_R_i_at_alpha = state_i.constraint_domain.evaluate_vanishing_polynomial(*alpha);
-            let v_C_i_at_beta = state_i.variable_domain.evaluate_vanishing_polynomial(*beta);
+        for (&circuit, state_i) in &self.circuit_specific_states {
+            let v_R_i_at_alpha = state_i.constraint_domain.evaluate_vanishing_polynomial(alpha);
+            let v_C_i_at_beta = state_i.variable_domain.evaluate_vanishing_polynomial(beta);
             let v_R_i_alpha_v_C_i_beta = v_R_i_at_alpha * v_C_i_at_beta;
             let k_domains = [state_i.non_zero_a_domain, state_i.non_zero_b_domain, state_i.non_zero_c_domain];
             let ariths = [&circuit.a_arith, &circuit.b_arith, &circuit.c_arith];
@@ -108,8 +108,8 @@ impl<F: PrimeField, MM: SNARKMode> AHPForR1CS<F, MM> {
                         state_i.variable_domain,
                         non_zero_domain,
                         arith,
-                        *alpha,
-                        *beta,
+                        alpha,
+                        beta,
                         v_R_i_alpha_v_C_i_beta,
                         max_non_zero_domain_size,
                         fft_precomp,
@@ -120,7 +120,7 @@ impl<F: PrimeField, MM: SNARKMode> AHPForR1CS<F, MM> {
             }
         }
 
-        let mut sums = Vec::with_capacity(state.circuit_specific_states.len());
+        let mut sums = Vec::with_capacity(self.circuit_specific_states.len());
         let mut gs = BTreeMap::new();
         for ((circuit_a, results_a), (circuit_b, results_b), (circuit_c, results_c)) in
             pool.execute_all().into_iter().tuples()
@@ -132,9 +132,9 @@ impl<F: PrimeField, MM: SNARKMode> AHPForR1CS<F, MM> {
             let (sum_c, lhs_c, g_c, a_poly_c, b_poly_c) = results_c?;
             let matrix_sum = prover::message::MatrixSums { sum_a, sum_b, sum_c };
             sums.push(matrix_sum);
-            state.circuit_specific_states.get_mut(circuit_a).unwrap().lhs_polynomials = Some([lhs_a, lhs_b, lhs_c]);
-            state.circuit_specific_states.get_mut(circuit_a).unwrap().a_polys = Some([a_poly_a, a_poly_b, a_poly_c]);
-            state.circuit_specific_states.get_mut(circuit_a).unwrap().b_polys = Some([b_poly_a, b_poly_b, b_poly_c]);
+            self.circuit_specific_states.get_mut(circuit_a).unwrap().lhs_polynomials = Some([lhs_a, lhs_b, lhs_c]);
+            self.circuit_specific_states.get_mut(circuit_a).unwrap().a_polys = Some([a_poly_a, a_poly_b, a_poly_c]);
+            self.circuit_specific_states.get_mut(circuit_a).unwrap().b_polys = Some([b_poly_a, b_poly_b, b_poly_c]);
             let matrix_gs = prover::MatrixGs { g_a, g_b, g_c };
             gs.insert(circuit_a.id, matrix_gs);
         }
@@ -142,13 +142,13 @@ impl<F: PrimeField, MM: SNARKMode> AHPForR1CS<F, MM> {
         let msg = prover::FourthMessage { sums };
         let oracles = prover::FourthOracles { gs };
 
-        assert!(oracles.matches_info(&Self::fourth_round_polynomial_info(
-            state.circuit_specific_states.keys().map(|c| (c.id, &c.index_info))
+        assert!(oracles.matches_info(&AHPForR1CS::<F, MM>::fourth_round_polynomial_info(
+            self.circuit_specific_states.keys().map(|c| (c.id, &c.index_info))
         )));
 
         end_timer!(round_time);
 
-        Ok((msg, oracles, state))
+        Ok((msg, oracles))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -242,5 +242,13 @@ impl<F: PrimeField, MM: SNARKMode> AHPForR1CS<F, MM> {
         assert!(lhs.degree() <= non_zero_domain.size() - 2);
         assert!(g.degree() <= non_zero_domain.size() - 2);
         Ok((f.coeffs[0], lhs, g, a_poly, b_poly))
+    }
+
+    pub fn verifier_fourth_round<Fq: PrimeField, R: AlgebraicSponge<Fq, 2>>(
+        &mut self,
+        fs_rng: &mut R,
+    ) -> Result<(), AHPError> {
+        self.verifier_state.as_mut().unwrap().fourth_round(fs_rng)?;
+        Ok(())
     }
 }

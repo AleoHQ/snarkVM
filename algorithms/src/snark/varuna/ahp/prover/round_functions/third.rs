@@ -22,20 +22,22 @@ use crate::{
     },
     polycommit::sonic_pc::{LabeledPolynomial, PolynomialInfo, PolynomialLabel},
     snark::varuna::{
-        ahp::{indexer::CircuitId, verifier, AHPForR1CS},
+        ahp::{indexer::CircuitId, verifier},
         matrices::transpose,
         prover::{self, MatrixSums, ThirdMessage},
         AHPError,
+        AHPForR1CS,
         Matrix,
         SNARKMode,
     },
+    AlgebraicSponge,
 };
+
+use itertools::Itertools;
 use snarkvm_fields::PrimeField;
 use snarkvm_utilities::{cfg_iter, ExecutionPool};
 
-use anyhow::{ensure, Result};
-use itertools::Itertools;
-use rand_core::RngCore;
+use anyhow::{anyhow, ensure, Result};
 use std::collections::BTreeMap;
 
 #[cfg(not(feature = "serial"))]
@@ -63,29 +65,27 @@ impl<F: PrimeField, MM: SNARKMode> AHPForR1CS<F, MM> {
         .map(|info| (info.label().into(), info))
         .collect()
     }
+}
 
-    /// Output the third round message and the next state.
-    pub fn prover_third_round<'a, R: RngCore>(
-        verifier_message: &verifier::FirstMessage<F>,
-        verifier_second_message: &verifier::SecondMessage<F>,
-        mut state: prover::State<'a, F, MM>,
-        _r: &mut R,
-    ) -> Result<(prover::ThirdMessage<F>, prover::ThirdOracles<F>, prover::State<'a, F, MM>), AHPError> {
+impl<'a, F: PrimeField, MM: SNARKMode> prover::State<'a, F, MM> {
+    pub fn third_round(&mut self) -> Result<(prover::ThirdMessage<F>, prover::ThirdOracles<F>), AHPError> {
         let round_time = start_timer!(|| "AHP::Prover::ThirdRound");
 
         let zk_bound = Self::zk_bound();
 
-        let max_variable_domain = state.max_variable_domain;
+        let max_variable_domain = self.max_variable_domain;
 
-        let verifier::FirstMessage { batch_combiners } = verifier_message;
-        let verifier::SecondMessage { alpha, eta_b, eta_c } = verifier_second_message;
+        let verifier_state = self.verifier_state.as_ref().ok_or(anyhow!("missing verifier state"))?;
+        let verifier::FirstMessage { batch_combiners, .. } =
+            verifier_state.first_round_message.clone().ok_or(anyhow!("missing verifier message"))?;
+        let verifier::SecondMessage { alpha, eta_b, eta_c } =
+            verifier_state.second_round_message.ok_or(anyhow!("missing verifier message"))?;
 
-        let assignments = Self::calculate_assignments(&mut state)?;
-        let matrix_transposes = Self::calculate_matrix_transpose(&mut state)?;
+        let assignments = self.calculate_assignments()?;
+        let matrix_transposes = self.calculate_matrix_transpose()?;
 
-        let (h_1, x_g_1_sum, msg) = Self::calculate_lineval_sumcheck_witness(
-            &mut state,
-            batch_combiners,
+        let (h_1, x_g_1_sum, msg) = self.calculate_lineval_sumcheck_witness(
+            &batch_combiners,
             assignments,
             matrix_transposes,
             alpha,
@@ -99,7 +99,7 @@ impl<F: PrimeField, MM: SNARKMode> AHPForR1CS<F, MM> {
             sumcheck_lhs += &x_g_1_sum;
             debug_assert!(
                 sumcheck_lhs.evaluate_over_domain_by_ref(max_variable_domain).evaluations.into_iter().sum::<F>()
-                    == msg.sum(batch_combiners, *eta_b, *eta_c)
+                    == msg.sum(&batch_combiners, eta_b, eta_c)
             );
         }
 
@@ -114,34 +114,36 @@ impl<F: PrimeField, MM: SNARKMode> AHPForR1CS<F, MM> {
             g_1: LabeledPolynomial::new("g_1", g_1, max_variable_domain.size() - 2, zk_bound),
             h_1: LabeledPolynomial::new("h_1", h_1, None, None),
         };
-        assert!(oracles.matches_info(&Self::third_round_polynomial_info(state.max_variable_domain.size())));
+        assert!(
+            oracles.matches_info(&AHPForR1CS::<F, MM>::third_round_polynomial_info(self.max_variable_domain.size()))
+        );
 
         end_timer!(round_time);
 
-        Ok((msg, oracles, state))
+        Ok((msg, oracles))
     }
 
     fn calculate_lineval_sumcheck_witness(
-        state: &mut prover::State<F, MM>,
+        &mut self,
         batch_combiners: &BTreeMap<CircuitId, verifier::BatchCombiners<F>>,
         assignments: BTreeMap<CircuitId, Vec<DensePolynomial<F>>>,
         matrix_transposes: BTreeMap<CircuitId, BTreeMap<String, Matrix<F>>>,
-        alpha: &F,
-        eta_b: &F,
-        eta_c: &F,
+        alpha: F,
+        eta_b: F,
+        eta_c: F,
     ) -> Result<(DensePolynomial<F>, DensePolynomial<F>, ThirdMessage<F>)> {
         let num_instances = batch_combiners.values().map(|c| c.instance_combiners.len()).collect_vec();
         let total_instances = num_instances.iter().sum::<usize>();
-        let max_variable_domain = &state.max_variable_domain;
+        let max_variable_domain = &self.max_variable_domain;
         let matrix_labels = ["a", "b", "c"];
-        let matrix_combiners = [F::one(), *eta_b, *eta_c];
+        let matrix_combiners = [F::one(), eta_b, eta_c];
 
-        let fft_precomputation = &state.fft_precomputation;
-        let ifft_precomputation = &state.ifft_precomputation;
+        let fft_precomputation = self.fft_precomputation;
+        let ifft_precomputation = self.ifft_precomputation;
 
         // Compute lineval sumcheck witnesses
         let mut job_pool = ExecutionPool::with_capacity(total_instances * 3);
-        for (((circuit_specific_state, batch_combiner), assignments_i), matrix_transposes_i) in state
+        for (((circuit_specific_state, batch_combiner), assignments_i), matrix_transposes_i) in self
             .circuit_specific_states
             .values_mut()
             .zip_eq(batch_combiners.values())
@@ -169,7 +171,7 @@ impl<F: PrimeField, MM: SNARKMode> AHPForR1CS<F, MM> {
                             ifft_precomputation,
                             assignment,
                             matrix_transpose,
-                            *alpha,
+                            alpha,
                             combiner,
                         )
                     });
@@ -205,7 +207,7 @@ impl<F: PrimeField, MM: SNARKMode> AHPForR1CS<F, MM> {
             }
         }
 
-        let mask_poly = state.first_round_oracles.as_ref().unwrap().mask_poly.as_ref();
+        let mask_poly = self.first_round_oracles.as_ref().unwrap().mask_poly.as_ref();
         assert_eq!(MM::ZK, mask_poly.is_some());
         assert_eq!(!MM::ZK, mask_poly.is_none());
         let mask_poly = &mask_poly.map_or(DensePolynomial::zero(), |p| p.polynomial().into_dense());
@@ -218,12 +220,12 @@ impl<F: PrimeField, MM: SNARKMode> AHPForR1CS<F, MM> {
         Ok((h_1_sum, xg_1_sum, msg))
     }
 
-    fn calculate_assignments(state: &mut prover::State<F, MM>) -> Result<BTreeMap<CircuitId, Vec<DensePolynomial<F>>>> {
+    fn calculate_assignments(&mut self) -> Result<BTreeMap<CircuitId, Vec<DensePolynomial<F>>>> {
         let assignments_time = start_timer!(|| "Calculate assignments");
-        let assignments: BTreeMap<_, _> = state
+        let assignments: BTreeMap<_, _> = self
             .circuit_specific_states
             .iter()
-            .zip_eq(state.first_round_oracles.as_ref().unwrap().batches.values())
+            .zip_eq(self.first_round_oracles.as_ref().unwrap().batches.values())
             .map(|((circuit, circuit_specific_state), w_polys)| {
                 let x_polys = &circuit_specific_state.x_polys;
                 let input_domain = &circuit_specific_state.input_domain;
@@ -247,12 +249,10 @@ impl<F: PrimeField, MM: SNARKMode> AHPForR1CS<F, MM> {
         Ok(assignments)
     }
 
-    fn calculate_matrix_transpose(
-        state: &mut prover::State<F, MM>,
-    ) -> Result<BTreeMap<CircuitId, BTreeMap<String, Matrix<F>>>> {
+    fn calculate_matrix_transpose(&mut self) -> Result<BTreeMap<CircuitId, BTreeMap<String, Matrix<F>>>> {
         let transpose_time = start_timer!(|| "Transpose of matrices");
-        let mut job_pool = ExecutionPool::with_capacity(state.circuit_specific_states.len() * 3);
-        state.circuit_specific_states.iter().for_each(|(circuit, circuit_specific_state)| {
+        let mut job_pool = ExecutionPool::with_capacity(self.circuit_specific_states.len() * 3);
+        self.circuit_specific_states.iter().for_each(|(circuit, circuit_specific_state)| {
             let variable_domain = &circuit_specific_state.variable_domain;
             let input_domain = &circuit_specific_state.input_domain;
             let matrices = [&circuit.a, &circuit.b, &circuit.c];
@@ -318,10 +318,18 @@ impl<F: PrimeField, MM: SNARKMode> AHPForR1CS<F, MM> {
 
         let (h_1_i, xg_1_i) =
             Self::apply_randomized_selector(&mut z_m_at_alpha, combiner, max_variable_domain, variable_domain, true)?;
-        let xg_1_i = xg_1_i.ok_or(anyhow::anyhow!("Expected remainder when applying selector"))?;
+        let xg_1_i = xg_1_i.ok_or(anyhow!("Expected remainder when applying selector"))?;
 
         end_timer!(sumcheck_time);
 
         Ok(LinevalInstance { h_1_i, xg_1_i, sum })
+    }
+
+    pub fn verifier_third_round<Fq: PrimeField, R: AlgebraicSponge<Fq, 2>>(
+        &mut self,
+        fs_rng: &mut R,
+    ) -> Result<(), AHPError> {
+        self.verifier_state.as_mut().unwrap().third_round(fs_rng)?;
+        Ok(())
     }
 }

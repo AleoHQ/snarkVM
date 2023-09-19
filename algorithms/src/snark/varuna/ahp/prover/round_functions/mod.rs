@@ -13,11 +13,6 @@
 // limitations under the License.
 
 use crate::{
-    fft::{
-        domain::{FFTPrecomputation, IFFTPrecomputation},
-        DensePolynomial,
-        EvaluationDomain,
-    },
     r1cs::ConstraintSynthesizer,
     snark::varuna::{
         ahp::{indexer::Circuit, AHPError, AHPForR1CS},
@@ -33,9 +28,11 @@ use rand::Rng;
 use rand_core::CryptoRng;
 use std::collections::BTreeMap;
 
+use crate::fft::domain::{FFTPrecomputation, IFFTPrecomputation};
+use snarkvm_utilities::cfg_iter;
+
 #[cfg(not(feature = "std"))]
 use snarkvm_utilities::println;
-use snarkvm_utilities::{cfg_iter, cfg_iter_mut};
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
@@ -170,61 +167,6 @@ impl<F: PrimeField, MM: SNARKMode> AHPForR1CS<F, MM> {
         let state = prover::State::initialize(indices_and_assignments, fft_precomp, ifft_precomp)?;
 
         Ok(state)
-    }
-
-    /// Throughout the protocol, we are tasked with computing a zerocheck or sumcheck
-    /// of multiple polynomials over different domains.
-    /// These can be combined into a single check by taking a random linear combination
-    /// of the polynomials and multiplying them by an appropriate selector polynomial.
-    /// This function applies the random combiner and selector in an optimized way
-    fn apply_randomized_selector(
-        poly: &mut DensePolynomial<F>,
-        combiner: F,
-        target_domain: &EvaluationDomain<F>,
-        src_domain: &EvaluationDomain<F>,
-        remainder_witness: bool,
-    ) -> Result<(DensePolynomial<F>, Option<DensePolynomial<F>>)> {
-        // Let H = target_domain;
-        // Let H_i = src_domain;
-        // Let v_H := H.vanishing_polynomial();
-        // Let v_H_i := H_i.vanishing_polynomial();
-        // Let s_i := H.selector_polynomial(H_i) = (v_H / v_H_i) * (H_i.size() / H.size());
-        // Let c_i := circuit combiner
-        // Let poly_i := circuit specific polynomial which is being checked
-
-        // Instead of just multiplying each poly_i by `s_i*c_i`, we reorder the check to cancel out division by v_H
-        // This removes a mul and div by v_H operation over each circuit's (target_domain - src_domain)
-        // We have two scenario's: either we return a remainder witness or there is none.
-        if !remainder_witness {
-            // Substituting in s_i, we get that poly_i * s_i / v_H = poly_i / v_H * (H_i.size() / H.size());
-            let selector_time = start_timer!(|| "Compute selector without remainder witness");
-            let (mut h_i, remainder) = poly
-                .divide_by_vanishing_poly(*src_domain)
-                .ok_or(anyhow::anyhow!("could not divide by vanishing poly"))?;
-            assert!(remainder.is_zero());
-            let multiplier = combiner * src_domain.size_as_field_element * target_domain.size_inv;
-            cfg_iter_mut!(h_i.coeffs).for_each(|c| *c *= multiplier);
-            end_timer!(selector_time);
-            Ok((h_i, None))
-        } else {
-            // Substituting in s_i, we get that:
-            // \sum_i{poly_i}/v_H = \sum{h_i*v_H + x_g_i}
-            // \sum_i{c_i*s_i*(poly_i/v_H - x_g_i)} = \sum{h_i*v_H}
-            // \sum_i{c_i*(H_i.size()/H.size())*(poly_i/v_H_i - x_g_i*v_H/v_H_i)} = \sum{h_i*v_H}
-            // \sum_i{c_i*(H_i.size()/H.size())*(poly_i/v_H_i} = \sum{h_i*v_H} + \sum{c_i*x_g_i*(v_H/v_H_i)*(H_i.size()/H.size())}
-            // (\sum_i{c_i*s_i*poly_i})/v_H = \sum{h_i*v_H} + \sum{c_i*s_i*x_g_i}
-            // (\sum_i{c_i*s_i*poly_i})/v_H = h_1*v_H + x_g_1
-            // That's what we're computing here.
-            let selector_time = start_timer!(|| "Compute selector with remainder witness");
-            let multiplier = combiner * src_domain.size_as_field_element * target_domain.size_inv;
-            cfg_iter_mut!(poly.coeffs).for_each(|c| *c *= multiplier);
-            let (h_i, mut xg_i) = poly.divide_by_vanishing_poly(*src_domain).unwrap();
-            xg_i = xg_i.mul_by_vanishing_poly(*target_domain);
-            let (xg_i, remainder) = xg_i.divide_by_vanishing_poly(*src_domain).unwrap();
-            assert!(remainder.is_zero());
-            end_timer!(selector_time);
-            Ok((h_i, Some(xg_i)))
-        }
     }
 }
 

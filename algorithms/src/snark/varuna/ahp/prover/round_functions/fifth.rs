@@ -17,15 +17,11 @@ use std::collections::BTreeMap;
 use crate::{
     fft::DensePolynomial,
     polycommit::sonic_pc::{LabeledPolynomial, PolynomialInfo, PolynomialLabel},
-    snark::varuna::{
-        ahp::{verifier, AHPError, AHPForR1CS},
-        prover,
-        SNARKMode,
-    },
+    snark::varuna::{ahp::AHPError, prover, AHPForR1CS, SNARKMode},
+    AlgebraicSponge,
 };
 
 use itertools::Itertools;
-use rand_core::RngCore;
 use snarkvm_fields::PrimeField;
 use snarkvm_utilities::{cfg_par_bridge, cfg_reduce};
 
@@ -38,14 +34,20 @@ impl<F: PrimeField, MM: SNARKMode> AHPForR1CS<F, MM> {
         1
     }
 
-    /// Output the fifth round message and the next state.
-    pub fn prover_fifth_round<R: RngCore>(
-        verifier_message: verifier::FourthMessage<F>,
-        state: prover::State<'_, F, MM>,
-        _r: &mut R,
-    ) -> Result<prover::FifthOracles<F>, AHPError> {
+    /// Output the degree bounds of oracles in the last round.
+    pub fn fifth_round_polynomial_info() -> BTreeMap<PolynomialLabel, PolynomialInfo> {
+        [("h_2".into(), PolynomialInfo::new("h_2".into(), None, None))].into()
+    }
+}
+
+impl<'a, F: PrimeField, MM: SNARKMode> prover::State<'a, F, MM> {
+    pub fn fifth_round(&mut self) -> Result<prover::FifthOracles<F>, AHPError> {
+        let verifier_state = self.verifier_state.as_ref().ok_or(anyhow::anyhow!("missing verifier state"))?;
+        let verifier_fourth_message =
+            verifier_state.fourth_round_message.clone().ok_or(anyhow::anyhow!("missing verifier message"))?;
+
         let lhs_sum: DensePolynomial<F> = cfg_reduce!(
-            cfg_par_bridge!(verifier_message.into_iter().zip_eq(state.lhs_polys_into_iter())).map(
+            cfg_par_bridge!(verifier_fourth_message.into_iter().zip_eq(self.take_lhs_polys())).map(
                 |(delta, mut lhs)| {
                     lhs *= delta;
                     lhs
@@ -61,12 +63,15 @@ impl<F: PrimeField, MM: SNARKMode> AHPForR1CS<F, MM> {
         );
         let h_2 = LabeledPolynomial::new("h_2", lhs_sum, None, None);
         let oracles = prover::FifthOracles { h_2 };
-        assert!(oracles.matches_info(&Self::fifth_round_polynomial_info()));
+        assert!(oracles.matches_info(&AHPForR1CS::<F, MM>::fifth_round_polynomial_info()));
         Ok(oracles)
     }
 
-    /// Output the degree bounds of oracles in the last round.
-    pub fn fifth_round_polynomial_info() -> BTreeMap<PolynomialLabel, PolynomialInfo> {
-        [("h_2".into(), PolynomialInfo::new("h_2".into(), None, None))].into()
+    pub fn verifier_fifth_round<Fq: PrimeField, R: AlgebraicSponge<Fq, 2>>(
+        &mut self,
+        fs_rng: &mut R,
+    ) -> Result<(), AHPError> {
+        self.verifier_state.as_mut().unwrap().fifth_round(fs_rng)?;
+        Ok(())
     }
 }

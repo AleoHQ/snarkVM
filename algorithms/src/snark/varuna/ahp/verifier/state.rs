@@ -17,7 +17,7 @@ use core::marker::PhantomData;
 use crate::{
     fft::EvaluationDomain,
     snark::varuna::{
-        ahp::verifier::{FirstMessage, FourthMessage, SecondMessage, ThirdMessage},
+        ahp::verifier::{FifthMessage, FirstMessage, FourthMessage, SecondMessage, ThirdMessage},
         CircuitId,
         SNARKMode,
     },
@@ -58,7 +58,7 @@ pub struct State<F: PrimeField, MM: SNARKMode> {
     pub(crate) third_round_message: Option<ThirdMessage<F>>,
     /// The verifier message in the fourth round of the AHP
     pub(crate) fourth_round_message: Option<FourthMessage<F>>,
-    /// The verifier's random challenge in the last round of the AHP
-    pub(crate) gamma: Option<F>,
+    /// The verifier message in the fifth round of the AHP
+    pub(crate) fifth_round_message: Option<FifthMessage<F>>,
     pub(crate) mode: PhantomData<MM>,
 }

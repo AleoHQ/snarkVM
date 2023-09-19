@@ -70,6 +70,12 @@ impl<F: PrimeField> FourthMessage<F> {
     }
 }
 
+/// Fifth message of the verifier.
+#[derive(Clone, Debug)]
+pub struct FifthMessage<F> {
+    pub gamma: F,
+}
+
 /// Query set of the verifier.
 #[derive(Clone, Debug)]
 pub struct QuerySet<F: PrimeField> {
@@ -89,8 +95,8 @@ pub struct QuerySet<F: PrimeField> {
 impl<F: PrimeField> QuerySet<F> {
     pub fn new<MM: SNARKMode>(state: &super::State<F, MM>) -> Self {
         let alpha = state.second_round_message.as_ref().unwrap().alpha;
-        let beta = state.third_round_message.unwrap().beta;
-        let gamma = state.gamma.unwrap();
+        let beta = state.third_round_message.as_ref().unwrap().beta;
+        let gamma = state.fifth_round_message.as_ref().unwrap().gamma;
         // The rowcheck_zerocheck, lineval_sumcheck and matrix_sumcheck are linear combinations ("virtual oracles") of other oracles
         // The rowcheck_zerocheck evaluates whether our polynomial constraints (e.g. R1CS) hold
         // The lineval_sumcheck evaluates whether those constraints hold on an evaluation of assignments multiplied by constraint matrices
