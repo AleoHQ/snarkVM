@@ -13,7 +13,8 @@
 // limitations under the License.
 
 use crate::{
-    helpers::memory::{BlockMemory, FinalizeMemory, TransactionMemory, TransitionMemory},
+    helpers::memory::{BFTMemory, BlockMemory, FinalizeMemory, TransactionMemory, TransitionMemory},
+    BFTStore,
     BlockStore,
     ConsensusStorage,
     FinalizeStore,
@@ -23,6 +24,8 @@ use console::prelude::*;
 /// An in-memory consensus storage.
 #[derive(Clone)]
 pub struct ConsensusMemory<N: Network> {
+    /// The BFT store.
+    bft_store: BFTStore<N, BFTMemory<N>>,
     /// The finalize store.
     finalize_store: FinalizeStore<N, FinalizeMemory<N>>,
     /// The block store.
@@ -31,6 +34,7 @@ pub struct ConsensusMemory<N: Network> {
 
 #[rustfmt::skip]
 impl<N: Network> ConsensusStorage<N> for ConsensusMemory<N> {
+    type BFTStorage = BFTMemory<N>;
     type FinalizeStorage = FinalizeMemory<N>;
     type BlockStorage = BlockMemory<N>;
     type TransactionStorage = TransactionMemory<N>;
@@ -38,15 +42,23 @@ impl<N: Network> ConsensusStorage<N> for ConsensusMemory<N> {
 
     /// Initializes the consensus storage.
     fn open(dev: Option<u16>) -> Result<Self> {
+        // Initialize the BFT store.
+        let bft_store = BFTStore::<N, BFTMemory<N>>::open(dev)?;
         // Initialize the finalize store.
         let finalize_store = FinalizeStore::<N, FinalizeMemory<N>>::open(dev)?;
         // Initialize the block store.
         let block_store = BlockStore::<N, BlockMemory<N>>::open(dev)?;
         // Return the consensus storage.
         Ok(Self {
+            bft_store,
             finalize_store,
             block_store,
         })
+    }
+
+    /// Returns the BFT store.
+    fn bft_store(&self) -> &BFTStore<N, Self::BFTStorage> {
+        &self.bft_store
     }
 
     /// Returns the finalize store.

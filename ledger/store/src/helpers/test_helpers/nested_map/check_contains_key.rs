@@ -23,6 +23,8 @@ pub fn check_contains_key(map: impl for<'a> NestedMap<'a, usize, usize, String>)
 
     const MAP: usize = 0;
 
+    println!("Inserting items");
+
     for i in 0..NUM_ITEMS {
         println!("i: {}", i);
 
@@ -59,12 +61,48 @@ pub fn check_contains_key(map: impl for<'a> NestedMap<'a, usize, usize, String>)
         map.finish_atomic().unwrap();
     }
 
-    for i in 0..NUM_TOTAL_ITEMS {
+    println!("Removing items");
+
+    for i in 0..NUM_ITEMS {
+        println!("i: {}", i);
+
         assert!(map.contains_key_confirmed(&MAP, &i).unwrap());
         assert!(map.contains_key_speculative(&MAP, &i).unwrap());
 
         // Remove the item from the map.
         map.remove_key(&MAP, &i).unwrap();
+
+        assert!(!map.contains_key_confirmed(&MAP, &i).unwrap());
+        assert!(!map.contains_key_speculative(&MAP, &i).unwrap());
+    }
+
+    /* test atomic removals */
+
+    {
+        // Start an atomic write batch.
+        map.start_atomic();
+
+        for i in NUM_ITEMS..NUM_TOTAL_ITEMS {
+            println!("i: {}", i);
+
+            assert!(map.contains_key_confirmed(&MAP, &i).unwrap());
+            assert!(map.contains_key_speculative(&MAP, &i).unwrap());
+
+            // Remove the item from the map.
+            map.remove_key(&MAP, &i).unwrap();
+
+            assert!(map.contains_key_confirmed(&MAP, &i).unwrap());
+            assert!(!map.contains_key_speculative(&MAP, &i).unwrap());
+        }
+
+        // Finish the current atomic write batch.
+        map.finish_atomic().unwrap();
+    }
+
+    println!("Final check");
+
+    for i in 0..NUM_TOTAL_ITEMS {
+        println!("i: {}", i);
 
         assert!(!map.contains_key_confirmed(&MAP, &i).unwrap());
         assert!(!map.contains_key_speculative(&MAP, &i).unwrap());

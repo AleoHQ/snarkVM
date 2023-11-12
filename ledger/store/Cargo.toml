@@ -59,6 +59,16 @@ package = "snarkvm-ledger-narwhal-batch-certificate"
 path = "../narwhal/batch-certificate"
 version = "=0.16.9"
 
+[dependencies.ledger-narwhal-transmission]
+package = "snarkvm-ledger-narwhal-transmission"
+path = "../narwhal/transmission"
+version = "=0.16.9"
+
+[dependencies.ledger-narwhal-transmission-id]
+package = "snarkvm-ledger-narwhal-transmission-id"
+path = "../narwhal/transmission-id"
+version = "=0.16.9"
+
 [dependencies.synthesizer-program]
 package = "snarkvm-synthesizer-program"
 path = "../../synthesizer/program"
@@ -111,6 +121,16 @@ optional = true
 [dev-dependencies.ledger-committee]
 package = "snarkvm-ledger-committee"
 path = "../committee"
+features = [ "test-helpers" ]
+
+[dev-dependencies.ledger-narwhal-transmission]
+package = "snarkvm-ledger-narwhal-transmission"
+path = "../narwhal/transmission"
+features = [ "test-helpers" ]
+
+[dev-dependencies.ledger-narwhal-transmission-id]
+package = "snarkvm-ledger-narwhal-transmission-id"
+path = "../narwhal/transmission-id"
 features = [ "test-helpers" ]
 
 [dev-dependencies.ledger-test-helpers]

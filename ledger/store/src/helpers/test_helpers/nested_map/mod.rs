@@ -18,6 +18,9 @@ pub use check_atomic_writes_are_batched::*;
 mod check_atomic_writes_can_be_aborted;
 pub use check_atomic_writes_can_be_aborted::*;
 
+mod check_contains_and_remove_map;
+pub use check_contains_and_remove_map::*;
+
 mod check_contains_key;
 pub use check_contains_key::*;
 

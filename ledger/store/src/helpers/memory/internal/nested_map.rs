@@ -241,27 +241,68 @@ impl<
     V: 'a + Clone + PartialEq + Eq + Serialize + for<'de> Deserialize<'de> + Send + Sync,
 > NestedMapRead<'a, M, K, V> for NestedMemoryMap<M, K, V>
 {
-    // type Iterator = core::iter::FlatMap<
-    //     btree_map::IntoIter<Vec<u8>, BTreeSet<Vec<u8>>>,
-    //     core::iter::Map<btree_set::IntoIter<Vec<u8>>, fn(Vec<u8>) -> (Cow<'a, M>, Cow<'a, K>, Cow<'a, V>)>,
-    //     fn((Vec<u8>, BTreeSet<Vec<u8>>)) -> core::iter::Map<btree_set::IntoIter<Vec<u8>>, fn(Vec<u8>) -> (Cow<'a, M>, Cow<'a, K>, Cow<'a, V>)>
-    // >;
     type Iterator = std::vec::IntoIter<(Cow<'a, M>, Cow<'a, K>, Cow<'a, V>)>;
-    // type Keys = core::iter::FlatMap<
-    //     btree_map::IntoIter<Vec<u8>, BTreeSet<Vec<u8>>>,
-    //     core::iter::Map<btree_set::IntoIter<Vec<u8>>, fn(Vec<u8>) -> (Cow<'a, M>, Cow<'a, K>)>,
-    //     fn((Vec<u8>, BTreeSet<Vec<u8>>)) -> core::iter::Map<btree_set::IntoIter<Vec<u8>>, fn(Vec<u8>) -> (Cow<'a, M>, Cow<'a, K>)>
-    // >;
     type Keys = std::vec::IntoIter<(Cow<'a, M>, Cow<'a, K>)>;
-    // type Keys = core::iter::Flatten<
-    //     core::iter::Map<btree_map::IntoIter<Vec<u8>, BTreeSet<Vec<u8>>>, fn((Vec<u8>, BTreeSet<Vec<u8>>)) -> core::iter::Map<btree_set::IntoIter<Vec<u8>>,
-    //         fn(Vec<u8>) -> (Cow<'a, M>, Cow<'a, K>)>>
-    // >;
     type PendingIterator = core::iter::Map<
         std::vec::IntoIter<(M, Option<K>, Option<V>)>,
         fn((M, Option<K>, Option<V>)) -> (Cow<'a, M>, Option<Cow<'a, K>>, Option<Cow<'a, V>>),
     >;
     type Values = core::iter::Map<btree_map::IntoValues<Vec<u8>, V>, fn(V) -> Cow<'a, V>>;
+
+    ///
+    /// Returns `true` if the given map exists.
+    ///
+    fn contains_map_confirmed(&self, map: &M) -> Result<bool> {
+        // Serialize 'm'.
+        let m = bincode::serialize(map)?;
+        // Return whether the serialized map exists in the map.
+        Ok(self.map.read().contains_key(&m))
+    }
+
+    ///
+    /// Returns `true` if the given map exists.
+    /// This method first checks the atomic batch, and if it does not exist, then checks the map.
+    ///
+    fn contains_map_speculative(&self, map: &M) -> Result<bool> {
+        // If a batch is in progress, check the atomic batch first.
+        if self.is_atomic_in_progress() {
+            // Fetch the remaining keys in the map.
+            let mut remaining_keys = self.get_map_confirmed(map)?.into_iter().map(|(k, _)| k).collect::<Vec<_>>();
+
+            // We iterate from the back of the `atomic_batch` to find the latest value.
+            for (m, k, v) in self.atomic_batch.lock().iter().rev() {
+                // If the map does not match the given map, then continue.
+                if m != map {
+                    continue;
+                }
+                // If the key is 'None', then the map is scheduled to be removed.
+                if k.is_none() {
+                    return Ok(false);
+                }
+                // If the value is 'None', then continue, as we do not know for certain whether the map exists.
+                // For instance, if the map contains two KV entries, then removing just one KV entry will not remove the map.
+                if v.is_none() {
+                    // Remove the key from the list of remaining keys.
+                    if let Some(index) = k.as_ref().and_then(|key| remaining_keys.iter().position(|x| x == key)) {
+                        remaining_keys.remove(index);
+                    }
+
+                    continue;
+                }
+                // If the key is 'Some(K)' and the value is 'Some(V)', then the map exists.
+                if k.is_some() && v.is_some() {
+                    return Ok(true);
+                }
+            }
+
+            // If there are no more remaining keys, then the map does not exist.
+            if remaining_keys.is_empty() {
+                return Ok(false);
+            }
+        }
+        // Otherwise, check the confirmed map.
+        self.contains_map_confirmed(map)
+    }
 
     ///
     /// Returns `true` if the given key exists in the map.
@@ -379,6 +420,37 @@ impl<
 
         // Return the key-value pairs for the map.
         Ok(key_values)
+    }
+
+    ///
+    /// Returns one key-value entry for the given map, if one exists.
+    /// There is no guarantee on the order or on which entry is returned.
+    ///
+    fn get_any_map_entry_confirmed(&'a self, map: &M) -> Result<Option<(K, V)>> {
+        // Serialize 'm'.
+        let m = bincode::serialize(map)?;
+        // Retrieve the keys for the serialized map.
+        let Some(keys) = self.map.read().get(&m).cloned() else {
+            return Ok(None);
+        };
+
+        // Acquire the read lock on 'map_inner'.
+        let map_inner = self.map_inner.read();
+        // Return an iterator over each key.
+        let key_value = keys
+            .into_iter()
+            .map(|k| {
+                // Deserialize 'k'.
+                let key: K = bincode::deserialize(&k).unwrap();
+                // Concatenate 'm' and 'k' with a 0-byte separator.
+                let mk = to_map_key(&m, &k);
+                // Return the key-value pair.
+                (key, map_inner.get(&mk).unwrap().clone())
+            })
+            .next();
+
+        // Return a key-value pair for the serialized map.
+        Ok(key_value)
     }
 
     ///
@@ -562,8 +634,13 @@ fn remove_key<
     // Concatenate 'm' and 'k' with a 0-byte separator.
     let mk = to_map_key(&m, &k);
 
-    map.entry(m).or_default().remove(&k);
+    map.entry(m.clone()).or_default().remove(&k);
     map_inner.remove(&mk);
+
+    // Remove the map if it is now empty.
+    if map.get(&m).map(|keys| keys.is_empty()).unwrap_or(false) {
+        map.remove(&m);
+    }
 }
 
 /// Returns the concatenated map-key.
@@ -619,6 +696,14 @@ mod tests {
         let map: NestedMemoryMap<usize, usize, String> = Default::default();
 
         crate::helpers::test_helpers::nested_map::check_remove_and_get_value_speculative(map);
+    }
+
+    #[test]
+    fn test_contains_and_remove_map() {
+        // Initialize a map.
+        let map: NestedMemoryMap<usize, usize, String> = Default::default();
+
+        crate::helpers::test_helpers::nested_map::check_contains_and_remove_map(map);
     }
 
     #[test]

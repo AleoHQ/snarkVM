@@ -46,6 +46,7 @@ use ledger_committee::Committee;
 use ledger_query::Query;
 use ledger_store::{
     atomic_finalize,
+    BFTStore,
     BlockStore,
     ConsensusStorage,
     ConsensusStore,
@@ -159,6 +160,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 }
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
+    /// Returns the BFT store.
+    #[inline]
+    pub fn bft_store(&self) -> &BFTStore<N, C::BFTStorage> {
+        self.store.bft_store()
+    }
+
     /// Returns the finalize store.
     #[inline]
     pub fn finalize_store(&self) -> &FinalizeStore<N, C::FinalizeStorage> {

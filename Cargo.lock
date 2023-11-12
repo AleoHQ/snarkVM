@@ -3219,6 +3219,8 @@ dependencies = [
  "snarkvm-ledger-coinbase",
  "snarkvm-ledger-committee",
  "snarkvm-ledger-narwhal-batch-certificate",
+ "snarkvm-ledger-narwhal-transmission",
+ "snarkvm-ledger-narwhal-transmission-id",
  "snarkvm-ledger-test-helpers",
  "snarkvm-synthesizer-program",
  "snarkvm-synthesizer-snark",

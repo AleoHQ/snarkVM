@@ -17,6 +17,9 @@
 
 pub mod helpers;
 
+mod bft;
+pub use bft::*;
+
 mod block;
 pub use block::*;
 

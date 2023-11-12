@@ -13,7 +13,8 @@
 // limitations under the License.
 
 use crate::{
-    helpers::rocksdb::{BlockDB, FinalizeDB, TransactionDB, TransitionDB},
+    helpers::rocksdb::{BlockDB, FinalizeDB, TransactionDB, TransitionDB, BFTDB},
+    BFTStore,
     BlockStore,
     ConsensusStorage,
     FinalizeStore,
@@ -23,6 +24,8 @@ use console::prelude::*;
 /// An RocksDB consensus storage.
 #[derive(Clone)]
 pub struct ConsensusDB<N: Network> {
+    /// The BFT store.
+    bft_store: BFTStore<N, BFTDB<N>>,
     /// The finalize store.
     finalize_store: FinalizeStore<N, FinalizeDB<N>>,
     /// The block store.
@@ -31,6 +34,7 @@ pub struct ConsensusDB<N: Network> {
 
 #[rustfmt::skip]
 impl<N: Network> ConsensusStorage<N> for ConsensusDB<N> {
+    type BFTStorage = BFTDB<N>;
     type FinalizeStorage = FinalizeDB<N>;
     type BlockStorage = BlockDB<N>;
     type TransactionStorage = TransactionDB<N>;
@@ -38,15 +42,23 @@ impl<N: Network> ConsensusStorage<N> for ConsensusDB<N> {
 
     /// Initializes the consensus storage.
     fn open(dev: Option<u16>) -> Result<Self> {
+        // Initialize the BFT store.
+        let bft_store = BFTStore::<N, BFTDB<N>>::open(dev)?;
         // Initialize the finalize store.
         let finalize_store = FinalizeStore::<N, FinalizeDB<N>>::open(dev)?;
         // Initialize the block store.
         let block_store = BlockStore::<N, BlockDB<N>>::open(dev)?;
         // Return the consensus storage.
         Ok(Self {
+            bft_store,
             finalize_store,
             block_store,
         })
+    }
+
+    /// Returns the BFT store.
+    fn bft_store(&self) -> &BFTStore<N, Self::BFTStorage> {
+        &self.bft_store
     }
 
     /// Returns the finalize store.

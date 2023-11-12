@@ -13,6 +13,8 @@
 // limitations under the License.
 
 use crate::{
+    BFTStorage,
+    BFTStore,
     BlockStorage,
     BlockStore,
     FinalizeStorage,
@@ -29,6 +31,8 @@ use core::marker::PhantomData;
 
 /// A trait for consensus storage.
 pub trait ConsensusStorage<N: Network>: 'static + Clone + Send + Sync {
+    /// The BFT storage.
+    type BFTStorage: BFTStorage<N>;
     /// The finalize storage.
     type FinalizeStorage: FinalizeStorage<N>;
     /// The block storage.
@@ -41,6 +45,8 @@ pub trait ConsensusStorage<N: Network>: 'static + Clone + Send + Sync {
     /// Initializes the consensus storage.
     fn open(dev: Option<u16>) -> Result<Self>;
 
+    /// Returns the BFT storage.
+    fn bft_store(&self) -> &BFTStore<N, Self::BFTStorage>;
     /// Returns the finalize storage.
     fn finalize_store(&self) -> &FinalizeStore<N, Self::FinalizeStorage>;
     /// Returns the block storage.
@@ -55,6 +61,8 @@ pub trait ConsensusStorage<N: Network>: 'static + Clone + Send + Sync {
     }
     /// Returns the optional development ID.
     fn dev(&self) -> Option<u16> {
+        debug_assert!(self.bft_store().dev() == self.finalize_store().dev());
+        debug_assert!(self.finalize_store().dev() == self.block_store().dev());
         debug_assert!(self.block_store().dev() == self.transaction_store().dev());
         debug_assert!(self.transaction_store().dev() == self.transition_store().dev());
         self.transition_store().dev()
@@ -62,41 +70,49 @@ pub trait ConsensusStorage<N: Network>: 'static + Clone + Send + Sync {
 
     /// Starts an atomic batch write operation.
     fn start_atomic(&self) {
+        self.bft_store().start_atomic();
         self.finalize_store().start_atomic();
         self.block_store().start_atomic();
     }
 
     /// Checks if an atomic batch is in progress.
     fn is_atomic_in_progress(&self) -> bool {
-        self.finalize_store().is_atomic_in_progress() || self.block_store().is_atomic_in_progress()
+        self.bft_store().is_atomic_in_progress()
+            || self.finalize_store().is_atomic_in_progress()
+            || self.block_store().is_atomic_in_progress()
     }
 
     /// Checkpoints the atomic batch.
     fn atomic_checkpoint(&self) {
+        self.bft_store().atomic_checkpoint();
         self.finalize_store().atomic_checkpoint();
         self.block_store().atomic_checkpoint();
     }
 
     /// Clears the latest atomic batch checkpoint.
     fn clear_latest_checkpoint(&self) {
+        self.bft_store().clear_latest_checkpoint();
         self.finalize_store().clear_latest_checkpoint();
         self.block_store().clear_latest_checkpoint();
     }
 
     /// Rewinds the atomic batch to the previous checkpoint.
     fn atomic_rewind(&self) {
+        self.bft_store().atomic_rewind();
         self.finalize_store().atomic_rewind();
         self.block_store().atomic_rewind();
     }
 
     /// Aborts an atomic batch write operation.
     fn abort_atomic(&self) {
+        self.bft_store().abort_atomic();
         self.finalize_store().abort_atomic();
         self.block_store().abort_atomic();
     }
 
     /// Finishes an atomic batch write operation.
     fn finish_atomic(&self) -> Result<()> {
+        self.bft_store().finish_atomic()?;
         self.finalize_store().finish_atomic()?;
         self.block_store().finish_atomic()
     }
@@ -123,6 +139,11 @@ impl<N: Network, C: ConsensusStorage<N>> ConsensusStore<N, C> {
     /// Initializes a consensus store from storage.
     pub fn from(storage: C) -> Self {
         Self { storage, _phantom: PhantomData }
+    }
+
+    /// Returns the BFT store.
+    pub fn bft_store(&self) -> &BFTStore<N, C::BFTStorage> {
+        self.storage.bft_store()
     }
 
     /// Returns the finalize store.

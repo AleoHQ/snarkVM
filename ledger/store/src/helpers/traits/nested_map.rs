@@ -95,6 +95,17 @@ pub trait NestedMapRead<
     type Values: Iterator<Item = Cow<'a, V>>;
 
     ///
+    /// Returns `true` if the given map exists.
+    ///
+    fn contains_map_confirmed(&self, map: &M) -> Result<bool>;
+
+    ///
+    /// Returns `true` if the given map exists.
+    /// This method first checks the atomic batch, and if it does not exist, then checks the map.
+    ///
+    fn contains_map_speculative(&self, map: &M) -> Result<bool>;
+
+    ///
     /// Returns `true` if the given key exists in the map.
     ///
     fn contains_key_confirmed(&self, map: &M, key: &K) -> Result<bool>;
@@ -109,6 +120,12 @@ pub trait NestedMapRead<
     /// Returns the confirmed key-value pairs for the given map, if it exists.
     ///
     fn get_map_confirmed(&'a self, map: &M) -> Result<Vec<(K, V)>>;
+
+    ///
+    /// Returns one key-value entry for the given map, if one exists.
+    /// There is no guarantee on the order or on which entry is returned.
+    ///
+    fn get_any_map_entry_confirmed(&'a self, map: &M) -> Result<Option<(K, V)>>;
 
     ///
     /// Returns the speculative key-value pairs for the given map, if it exists.

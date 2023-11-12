@@ -17,16 +17,17 @@
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u16)]
 pub enum MapID {
+    BFTTransmission(BFTTransmissionMap),
     Block(BlockMap),
     Committee(CommitteeMap),
     Deployment(DeploymentMap),
     Execution(ExecutionMap),
     Fee(FeeMap),
+    Program(ProgramMap),
     Transaction(TransactionMap),
     Transition(TransitionMap),
     TransitionInput(TransitionInputMap),
     TransitionOutput(TransitionOutputMap),
-    Program(ProgramMap),
     #[cfg(test)]
     Test(TestMap),
 }
@@ -34,20 +35,30 @@ pub enum MapID {
 impl From<MapID> for u16 {
     fn from(id: MapID) -> u16 {
         match id {
+            MapID::BFTTransmission(id) => id as u16,
             MapID::Block(id) => id as u16,
             MapID::Committee(id) => id as u16,
             MapID::Deployment(id) => id as u16,
             MapID::Execution(id) => id as u16,
             MapID::Fee(id) => id as u16,
+            MapID::Program(id) => id as u16,
             MapID::Transaction(id) => id as u16,
             MapID::Transition(id) => id as u16,
             MapID::TransitionInput(id) => id as u16,
             MapID::TransitionOutput(id) => id as u16,
-            MapID::Program(id) => id as u16,
             #[cfg(test)]
             MapID::Test(id) => id as u16,
         }
     }
+}
+
+/// The RocksDB map prefix for transmission-related entries.
+// Note: the order of these variants can be changed at any point in time,
+// as long as the corresponding DataID values remain the same.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(u16)]
+pub enum BFTTransmissionMap {
+    ID = DataID::BFTTransmissionMap as u16,
 }
 
 /// The RocksDB map prefix for block-related entries.
@@ -120,6 +131,38 @@ pub enum FeeMap {
     ReverseFee = DataID::FeeReverseFeeMap as u16,
 }
 
+/// The RocksDB map prefix for program-related entries.
+// Note: the order of these variants can be changed at any point in time,
+// as long as the corresponding DataID values remain the same.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(u16)]
+pub enum ProgramMap {
+    ProgramID = DataID::ProgramIDMap as u16,
+    KeyValueID = DataID::KeyValueMap as u16,
+}
+
+/// The RocksDB map prefix for transaction-related entries.
+// Note: the order of these variants can be changed at any point in time,
+// as long as the corresponding DataID values remain the same.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(u16)]
+pub enum TransactionMap {
+    ID = DataID::TransactionIDMap as u16,
+}
+
+/// The RocksDB map prefix for transition-related entries.
+// Note: the order of these variants can be changed at any point in time,
+// as long as the corresponding DataID values remain the same.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(u16)]
+pub enum TransitionMap {
+    Locator = DataID::TransitionLocatorMap as u16,
+    TPK = DataID::TransitionTPKMap as u16,
+    ReverseTPK = DataID::TransitionReverseTPKMap as u16,
+    TCM = DataID::TransitionTCMMap as u16,
+    ReverseTCM = DataID::TransitionReverseTCMMap as u16,
+}
+
 /// The RocksDB map prefix for transition input entries.
 // Note: the order of these variants can be changed at any point in time,
 // as long as the corresponding DataID values remain the same.
@@ -151,38 +194,6 @@ pub enum TransitionOutputMap {
     RecordNonce = DataID::OutputRecordNonceMap as u16,
     ExternalRecord = DataID::OutputExternalRecordMap as u16,
     Future = DataID::OutputFutureMap as u16,
-}
-
-/// The RocksDB map prefix for transaction-related entries.
-// Note: the order of these variants can be changed at any point in time,
-// as long as the corresponding DataID values remain the same.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[repr(u16)]
-pub enum TransactionMap {
-    ID = DataID::TransactionIDMap as u16,
-}
-
-/// The RocksDB map prefix for transition-related entries.
-// Note: the order of these variants can be changed at any point in time,
-// as long as the corresponding DataID values remain the same.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[repr(u16)]
-pub enum TransitionMap {
-    Locator = DataID::TransitionLocatorMap as u16,
-    TPK = DataID::TransitionTPKMap as u16,
-    ReverseTPK = DataID::TransitionReverseTPKMap as u16,
-    TCM = DataID::TransitionTCMMap as u16,
-    ReverseTCM = DataID::TransitionReverseTCMMap as u16,
-}
-
-/// The RocksDB map prefix for program-related entries.
-// Note: the order of these variants can be changed at any point in time,
-// as long as the corresponding DataID values remain the same.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[repr(u16)]
-pub enum ProgramMap {
-    ProgramID = DataID::ProgramIDMap as u16,
-    KeyValueID = DataID::KeyValueMap as u16,
 }
 
 /// The RocksDB map prefix for test-related entries.
@@ -273,6 +284,8 @@ enum DataID {
 
     // TODO (howardwu): For mainnet - Reorder this up above.
     BlockRejectedDeploymentOrExecutionMap,
+    // BFT
+    BFTTransmissionMap,
 
     // Testing
     #[cfg(test)]
