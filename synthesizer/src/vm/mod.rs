@@ -309,7 +309,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
     /// Adds the given block into the VM.
     #[inline]
-    pub fn add_next_block(&self, block: &Block<N>) -> Result<()> {
+    pub fn add_next_block(&mut self, block: &Block<N>) -> Result<()> {
         // Construct the finalize state.
         let state = FinalizeGlobalState::new::<N>(
             block.round(),

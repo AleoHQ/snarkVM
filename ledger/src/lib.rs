@@ -67,9 +67,8 @@ use aleo_std::prelude::{finish, lap, timer};
 use anyhow::Result;
 use core::ops::Range;
 use indexmap::IndexMap;
-use parking_lot::RwLock;
 use rand::{prelude::IteratorRandom, rngs::OsRng};
-use std::{borrow::Cow, sync::Arc};
+use std::borrow::Cow;
 use time::OffsetDateTime;
 
 #[cfg(not(feature = "serial"))]
@@ -99,12 +98,19 @@ pub struct Ledger<N: Network, C: ConsensusStorage<N>> {
     genesis_block: Block<N>,
     /// The coinbase puzzle.
     coinbase_puzzle: CoinbasePuzzle<N>,
+
+    /// Current context for the ledger.
+    current_ctx: CurrentCtx<N>,
+}
+
+#[derive(Clone)]
+struct CurrentCtx<N: Network> {
     /// The current epoch challenge.
-    current_epoch_challenge: Arc<RwLock<Option<EpochChallenge<N>>>>,
+    epoch_challenge: Option<EpochChallenge<N>>, 
     /// The current committee.
-    current_committee: Arc<RwLock<Option<Committee<N>>>>,
+    committee: Option<Committee<N>>,
     /// The current block.
-    current_block: Arc<RwLock<Block<N>>>,
+    block: Block<N>,
 }
 
 impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
@@ -125,7 +131,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         // Spot check the integrity of `NUM_BLOCKS` random blocks upon bootup.
         const NUM_BLOCKS: usize = 10;
         // Retrieve the latest height.
-        let latest_height = ledger.current_block.read().height();
+        let latest_height = ledger.current_ctx.block.height();
         debug_assert_eq!(latest_height, *ledger.vm.block_store().heights().max().unwrap(), "Mismatch in latest height");
         // Sample random block heights.
         let block_heights: Vec<u32> =
@@ -164,9 +170,11 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             vm,
             genesis_block: genesis_block.clone(),
             coinbase_puzzle: CoinbasePuzzle::<N>::load()?,
-            current_epoch_challenge: Default::default(),
-            current_committee: Arc::new(RwLock::new(current_committee)),
-            current_block: Arc::new(RwLock::new(genesis_block.clone())),
+            current_ctx: CurrentCtx {
+                epoch_challenge: None,
+                committee: current_committee,
+                block: genesis_block.clone(),
+            },
         };
 
         // If the block store is empty, initialize the genesis block.
@@ -185,11 +193,11 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             .map_err(|_| anyhow!("Failed to load block {latest_height} from the ledger"))?;
 
         // Set the current block.
-        ledger.current_block = Arc::new(RwLock::new(block));
+        ledger.current_ctx.block = block;
         // Set the current committee (and ensures the latest committee exists).
-        ledger.current_committee = Arc::new(RwLock::new(Some(ledger.latest_committee()?)));
+        ledger.current_ctx.committee = Some(ledger.latest_committee()?);
         // Set the current epoch challenge.
-        ledger.current_epoch_challenge = Arc::new(RwLock::new(Some(ledger.get_epoch_challenge(latest_height)?)));
+        ledger.current_ctx.epoch_challenge = Some(ledger.get_epoch_challenge(latest_height)?);
 
         finish!(timer, "Initialize ledger");
         Ok(ledger)
@@ -207,7 +215,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
 
     /// Returns the latest committee.
     pub fn latest_committee(&self) -> Result<Committee<N>> {
-        match self.current_committee.read().as_ref() {
+        match &self.current_ctx.committee {
             Some(committee) => Ok(committee.clone()),
             None => self.vm.finalize_store().committee_store().current_committee(),
         }
@@ -220,12 +228,12 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
 
     /// Returns the latest epoch number.
     pub fn latest_epoch_number(&self) -> u32 {
-        self.current_block.read().height() / N::NUM_BLOCKS_PER_EPOCH
+        self.current_ctx.block.height() / N::NUM_BLOCKS_PER_EPOCH
     }
 
     /// Returns the latest epoch challenge.
     pub fn latest_epoch_challenge(&self) -> Result<EpochChallenge<N>> {
-        match self.current_epoch_challenge.read().as_ref() {
+        match &self.current_ctx.epoch_challenge {
             Some(challenge) => Ok(challenge.clone()),
             None => self.get_epoch_challenge(self.latest_height()),
         }
@@ -233,72 +241,72 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
 
     /// Returns the latest block.
     pub fn latest_block(&self) -> Block<N> {
-        self.current_block.read().clone()
+        self.current_ctx.block.clone()
     }
 
     /// Returns the latest round number.
     pub fn latest_round(&self) -> u64 {
-        self.current_block.read().round()
+        self.current_ctx.block.round()
     }
 
     /// Returns the latest block height.
     pub fn latest_height(&self) -> u32 {
-        self.current_block.read().height()
+        self.current_ctx.block.height()
     }
 
     /// Returns the latest block hash.
     pub fn latest_hash(&self) -> N::BlockHash {
-        self.current_block.read().hash()
+        self.current_ctx.block.hash()
     }
 
     /// Returns the latest block header.
     pub fn latest_header(&self) -> Header<N> {
-        *self.current_block.read().header()
+        *self.current_ctx.block.header()
     }
 
     /// Returns the latest block cumulative weight.
     pub fn latest_cumulative_weight(&self) -> u128 {
-        self.current_block.read().cumulative_weight()
+        self.current_ctx.block.cumulative_weight()
     }
 
     /// Returns the latest block cumulative proof target.
     pub fn latest_cumulative_proof_target(&self) -> u128 {
-        self.current_block.read().cumulative_proof_target()
+        self.current_ctx.block.cumulative_proof_target()
     }
 
     /// Returns the latest block solutions root.
     pub fn latest_solutions_root(&self) -> Field<N> {
-        self.current_block.read().header().solutions_root()
+        self.current_ctx.block.header().solutions_root()
     }
 
     /// Returns the latest block coinbase target.
     pub fn latest_coinbase_target(&self) -> u64 {
-        self.current_block.read().coinbase_target()
+        self.current_ctx.block.coinbase_target()
     }
 
     /// Returns the latest block proof target.
     pub fn latest_proof_target(&self) -> u64 {
-        self.current_block.read().proof_target()
+        self.current_ctx.block.proof_target()
     }
 
     /// Returns the last coinbase target.
     pub fn last_coinbase_target(&self) -> u64 {
-        self.current_block.read().last_coinbase_target()
+        self.current_ctx.block.last_coinbase_target()
     }
 
     /// Returns the last coinbase timestamp.
     pub fn last_coinbase_timestamp(&self) -> i64 {
-        self.current_block.read().last_coinbase_timestamp()
+        self.current_ctx.block.last_coinbase_timestamp()
     }
 
     /// Returns the latest block timestamp.
     pub fn latest_timestamp(&self) -> i64 {
-        self.current_block.read().timestamp()
+        self.current_ctx.block.timestamp()
     }
 
     /// Returns the latest block transactions.
     pub fn latest_transactions(&self) -> Transactions<N> {
-        self.current_block.read().transactions().clone()
+        self.current_ctx.block.transactions().clone()
     }
 }
 
