@@ -236,13 +236,17 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// Returns a new genesis block for a beacon chain.
     pub fn genesis_beacon<R: Rng + CryptoRng>(&self, private_key: &PrivateKey<N>, rng: &mut R) -> Result<Block<N>> {
         let private_keys = [*private_key, PrivateKey::new(rng)?, PrivateKey::new(rng)?, PrivateKey::new(rng)?];
+        let address0 = Address::try_from(private_keys[0])?;
+        let address1 = Address::try_from(private_keys[1])?;
+        let address2 = Address::try_from(private_keys[2])?;
+        let address3 = Address::try_from(private_keys[3])?;
 
         // Construct the committee members.
         let members = indexmap::indexmap! {
-            Address::try_from(private_keys[0])? => (ledger_committee::MIN_VALIDATOR_STAKE, true),
-            Address::try_from(private_keys[1])? => (ledger_committee::MIN_VALIDATOR_STAKE, true),
-            Address::try_from(private_keys[2])? => (ledger_committee::MIN_VALIDATOR_STAKE, true),
-            Address::try_from(private_keys[3])? => (ledger_committee::MIN_VALIDATOR_STAKE, true),
+            address0 => (ledger_committee::MIN_VALIDATOR_STAKE, true, address0),
+            address1 => (ledger_committee::MIN_VALIDATOR_STAKE, true, address1),
+            address2 => (ledger_committee::MIN_VALIDATOR_STAKE, true, address2),
+            address3 => (ledger_committee::MIN_VALIDATOR_STAKE, true, address3),
         };
         // Construct the committee.
         let committee = Committee::<N>::new_genesis(members)?;

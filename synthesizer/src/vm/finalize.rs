@@ -783,7 +783,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     // Initialize the stakers.
                     let mut stakers = IndexMap::with_capacity(committee.members().len());
                     // Iterate over the committee members.
-                    for (validator, (microcredits, _)) in committee.members() {
+                    for (validator, (microcredits, _, _)) in committee.members() {
                         // Insert the validator into the stakers.
                         stakers.insert(*validator, (*validator, *microcredits));
                     }

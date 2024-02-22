@@ -40,8 +40,8 @@ pub const MIN_DELEGATOR_STAKE: u64 = 10_000_000u64; // microcredits
 pub struct Committee<N: Network> {
     /// The starting round number for this committee.
     starting_round: u64,
-    /// A map of `address` to `(stake, is_open)` state.
-    members: IndexMap<Address<N>, (u64, bool)>,
+    /// A map of `address` to `(stake, is_open, delegate_address)` state.
+    members: IndexMap<Address<N>, (u64, bool, Address<N>)>,
     /// The total stake of all `members`.
     total_stake: u64,
 }
@@ -51,15 +51,18 @@ impl<N: Network> Committee<N> {
     pub const MAX_COMMITTEE_SIZE: u16 = 200;
 
     /// Initializes a new `Committee` instance.
-    pub fn new_genesis(members: IndexMap<Address<N>, (u64, bool)>) -> Result<Self> {
+    pub fn new_genesis(members: IndexMap<Address<N>, (u64, bool, Address<N>)>) -> Result<Self> {
+        // Ensure there are exactly 4 members.
+        ensure!(members.len() == 4, "Genesis committee must have 4 members");
         // Return the new committee.
         Self::new(0u64, members)
     }
 
     /// Initializes a new `Committee` instance.
-    pub fn new(starting_round: u64, members: IndexMap<Address<N>, (u64, bool)>) -> Result<Self> {
-        // Ensure there are at least 3 members.
-        ensure!(members.len() >= 3, "Committee must have at least 3 members");
+    pub fn new(starting_round: u64, members: IndexMap<Address<N>, (u64, bool, Address<N>)>) -> Result<Self> {
+        // Ensure there are at least 4 members.
+        ensure!(members.len() >= 4, "Committee must have at least 4 members");
+
         // Ensure there are no more than the maximum number of members.
         ensure!(
             members.len() <= Self::MAX_COMMITTEE_SIZE as usize,
@@ -68,7 +71,7 @@ impl<N: Network> Committee<N> {
         );
         // Ensure all members have the minimum required stake.
         ensure!(
-            members.values().all(|(stake, _)| *stake >= MIN_VALIDATOR_STAKE),
+            members.values().all(|(stake, _, _)| *stake >= MIN_VALIDATOR_STAKE),
             "All members must have at least {MIN_VALIDATOR_STAKE} microcredits in stake"
         );
         // Compute the total stake of the committee for this round.
@@ -87,7 +90,7 @@ impl<N: Network> Committee<N> {
     }
 
     /// Returns the committee members alongside their stake.
-    pub const fn members(&self) -> &IndexMap<Address<N>, (u64, bool)> {
+    pub const fn members(&self) -> &IndexMap<Address<N>, (u64, bool, Address<N>)> {
         &self.members
     }
 
@@ -103,12 +106,17 @@ impl<N: Network> Committee<N> {
 
     /// Returns `true` if the given address is in the committee and is open.
     pub fn is_committee_member_open(&self, address: Address<N>) -> bool {
-        self.members.get(&address).copied().unwrap_or_default().1
+        self.members.get(&address).copied().unwrap_or((0, false, address)).1
+    }
+
+    /// Returns the validator delegate address in the committee.
+    pub fn get_committee_member_delegate_address(&self, address: Address<N>) -> Address<N> {
+        self.members.get(&address).copied().unwrap_or((0, false, address)).2
     }
 
     /// Returns the amount of stake for the given address.
     pub fn get_stake(&self, address: Address<N>) -> u64 {
-        self.members.get(&address).copied().unwrap_or_default().0
+        self.members.get(&address).copied().unwrap_or((0, false, address)).0
     }
 
     /// Returns `true` if the combined stake for the given addresses reaches the availability threshold.
@@ -182,7 +190,7 @@ impl<N: Network> Committee<N> {
         // Sort the committee members.
         let candidates = self.sorted_members();
         // Determine the leader of the previous round.
-        for (candidate, (stake, _)) in candidates {
+        for (candidate, (stake, _, _)) in candidates {
             // Increment the current stake index by the candidate's stake.
             current_stake_index = current_stake_index.saturating_add(stake);
             // If the current stake index is greater than or equal to the stake index,
@@ -199,9 +207,9 @@ impl<N: Network> Committee<N> {
     /// Returns the committee members sorted by stake in decreasing order.
     /// For members with matching stakes, we further sort by their address' x-coordinate in decreasing order.
     /// Note: This ensures the method returns a deterministic result that is SNARK-friendly.
-    fn sorted_members(&self) -> indexmap::map::IntoIter<Address<N>, (u64, bool)> {
+    fn sorted_members(&self) -> indexmap::map::IntoIter<Address<N>, (u64, bool, Address<N>)> {
         let members = self.members.clone();
-        members.sorted_unstable_by(|address1, stake1, address2, stake2| {
+        members.sorted_unstable_by(|address1, (stake1, _, _), address2, (stake2, _, _)| {
             // Sort by stake in decreasing order.
             let cmp = stake2.cmp(stake1);
             // If the stakes are equal, sort by x-coordinate in decreasing order.
@@ -212,9 +220,9 @@ impl<N: Network> Committee<N> {
 
 impl<N: Network> Committee<N> {
     /// Compute the total stake of the given members.
-    fn compute_total_stake(members: &IndexMap<Address<N>, (u64, bool)>) -> Result<u64> {
+    fn compute_total_stake(members: &IndexMap<Address<N>, (u64, bool, Address<N>)>) -> Result<u64> {
         let mut power = 0u64;
-        for (stake, _) in members.values() {
+        for (stake, _, _) in members.values() {
             // Accumulate the stake, checking for overflow.
             power = match power.checked_add(*stake) {
                 Some(power) => power,
@@ -261,10 +269,12 @@ pub mod test_helpers {
     ) -> Committee<CurrentNetwork> {
         // Sample the members.
         let mut members = IndexMap::new();
-        for _ in 0..num_members {
+        for _ in 0..num_members - 1 {
             let is_open = rng.gen();
-            members.insert(Address::<CurrentNetwork>::new(rng.gen()), (2 * MIN_VALIDATOR_STAKE, is_open));
+            let member_address = Address::<CurrentNetwork>::new(rng.gen());
+            members.insert(member_address, (2 * MIN_VALIDATOR_STAKE, is_open, member_address));
         }
+
         // Return the committee.
         Committee::<CurrentNetwork>::new(round, members).unwrap()
     }
@@ -279,7 +289,7 @@ pub mod test_helpers {
         let mut committee_members = IndexMap::new();
         for member in members {
             let is_open = rng.gen();
-            committee_members.insert(member, (2 * MIN_VALIDATOR_STAKE, is_open));
+            committee_members.insert(member, (2 * MIN_VALIDATOR_STAKE, is_open, member));
         }
         // Return the committee.
         Committee::<CurrentNetwork>::new(round, committee_members).unwrap()
@@ -298,18 +308,22 @@ pub mod test_helpers {
         // Sample the members.
         let mut members = IndexMap::new();
         // Add in the minimum and maximum staked nodes.
-        members.insert(Address::<CurrentNetwork>::new(rng.gen()), (MIN_VALIDATOR_STAKE, false));
+        let member_address = Address::<CurrentNetwork>::new(rng.gen());
+        members.insert(member_address, (MIN_VALIDATOR_STAKE, false, member_address));
         while members.len() < num_members as usize - 1 {
             loop {
                 let stake = MIN_VALIDATOR_STAKE as f64 + range * distribution.sample(rng);
+                let member_address = Address::<CurrentNetwork>::new(rng.gen());
+
                 if stake >= MIN_VALIDATOR_STAKE as f64 && stake <= MAX_STAKE as f64 {
                     let is_open = rng.gen();
-                    members.insert(Address::<CurrentNetwork>::new(rng.gen()), (stake as u64, is_open));
+                    members.insert(member_address, (stake as u64, is_open, member_address));
                     break;
                 }
             }
         }
-        members.insert(Address::<CurrentNetwork>::new(rng.gen()), (MAX_STAKE, false));
+        let member_address = Address::<CurrentNetwork>::new(rng.gen());
+        members.insert(member_address, (MAX_STAKE, false, member_address));
         // Return the committee.
         Committee::<CurrentNetwork>::new(1, members).unwrap()
     }
@@ -339,7 +353,7 @@ mod tests {
         });
         let leaders = leaders.read();
         // Ensure the leader distribution is uniform.
-        for (i, (address, (stake, _))) in committee.members.iter().enumerate() {
+        for (i, (address, (stake, _, _))) in committee.members.iter().enumerate() {
             // Get the leader count for the validator.
             let Some(leader_count) = leaders.get(address) else {
                 println!("{i}: 0 rounds");
@@ -401,8 +415,8 @@ mod tests {
         println!("sorted_members: {}ms", timer.elapsed().as_millis());
         // Check that the members are sorted based on our sorting criteria.
         for i in 0..sorted_members.len() - 1 {
-            let (address1, (stake1, _)) = sorted_members[i];
-            let (address2, (stake2, _)) = sorted_members[i + 1];
+            let (address1, (stake1, _, _)) = sorted_members[i];
+            let (address2, (stake2, _, _)) = sorted_members[i + 1];
             assert!(stake1 >= stake2);
             if stake1 == stake2 {
                 assert!(address1.to_x_coordinate() > address2.to_x_coordinate());

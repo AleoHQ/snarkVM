@@ -44,8 +44,10 @@ impl<N: Network> FromBytes for Committee<N> {
             let stake = u64::read_le(&mut reader)?;
             // Read the is_open flag.
             let is_open = bool::read_le(&mut reader)?;
+            // Read the delegate account.
+            let delegate_address = Address::read_le(&mut reader)?;
             // Insert the member and (stake, is_open).
-            members.insert(member, (stake, is_open));
+            members.insert(member, (stake, is_open, delegate_address));
         }
         // Read the total stake.
         let total_stake = u64::read_le(&mut reader)?;
@@ -69,13 +71,15 @@ impl<N: Network> ToBytes for Committee<N> {
         // Write the number of members.
         u16::try_from(self.members.len()).map_err(|e| error(e.to_string()))?.write_le(&mut writer)?;
         // Write the members.
-        for (address, (stake, is_open)) in &self.members {
+        for (address, (stake, is_open, delegate_address)) in &self.members {
             // Write the address.
             address.write_le(&mut writer)?;
             // Write the stake.
             stake.write_le(&mut writer)?;
             // Write the is_open flag.
             is_open.write_le(&mut writer)?;
+            // Write the delegate_address flag.
+            delegate_address.write_le(&mut writer)?;
         }
         // Write the total stake.
         self.total_stake.write_le(&mut writer)
