@@ -21,6 +21,9 @@ mod execute;
 mod finalize;
 mod verify;
 
+#[cfg(test)]
+mod tests;
+
 use crate::{cast_mut_ref, cast_ref, process};
 use console::{
     account::{Address, PrivateKey},
