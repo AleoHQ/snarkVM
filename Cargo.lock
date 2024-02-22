@@ -2545,6 +2545,7 @@ dependencies = [
  "parking_lot",
  "rand",
  "rayon",
+ "reqwest",
  "rusty-hook",
  "self_update",
  "serde_json",

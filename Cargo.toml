@@ -103,7 +103,8 @@ default = [
   "parameters",
   "synthesizer",
   "utilities",
-  "cli"
+  "cli",
+  "client"
 ]
 full = [
   "algorithms",
@@ -127,6 +128,7 @@ cli = [
   "thiserror",
   "ureq"
 ]
+client = [ "anyhow", "bincode", "rand", "reqwest", "serde_json", "synthesizer" ]
 aleo-cli = [ "snarkvm-synthesizer/aleo-cli" ]
 async = [ "snarkvm-ledger/async", "snarkvm-synthesizer/async" ]
 cuda = [ "snarkvm-algorithms/cuda" ]
@@ -211,6 +213,10 @@ version = "1"
 version = "1.0.73"
 optional = true
 
+[dependencies.bincode]
+version = "1"
+optional = true
+
 [dependencies.clap]
 version = "4.4"
 features = [ "derive", "color" ]
@@ -243,6 +249,10 @@ optional = true
 
 [dependencies.rayon]
 version = "1"
+
+[dependencies.reqwest]
+version = "0.11"
+optional = true
 
 [dependencies.self_update]
 version = "0.38"
