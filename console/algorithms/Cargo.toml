@@ -25,7 +25,7 @@ harness = false
 path = "../types"
 version = "=0.16.19"
 default-features = false
-features = [ "field", "group", "integers", "scalar" ]
+features = [ "boolean", "field", "group", "integers", "scalar" ]
 
 [dependencies.snarkvm-fields]
 path = "../../fields"
