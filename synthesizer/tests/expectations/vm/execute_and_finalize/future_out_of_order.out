@@ -4,17 +4,17 @@ outputs:
   execute:
     parent.aleo/foo:
       outputs:
-      - '{"type":"future","id":"7394141067016125812495697738481918699806105328524107874699813647057124800624field","value":"{\n  program_id: parent.aleo,\n  function_name: foo,\n  arguments: [\n    {\n      program_id: child.aleo,\n      function_name: boo,\n      arguments: [\n        aleo16w8t56s7v6ud7vu33fr388ph0dq0c7yhp597cyjt88rr3nultcyqcyk9yy\n      ]\n    },\n    {\n      program_id: child.aleo,\n      function_name: boo,\n      arguments: [\n        aleo16w8t56s7v6ud7vu33fr388ph0dq0c7yhp597cyjt88rr3nultcyqcyk9yy\n      ]\n    },\n    {\n      program_id: child.aleo,\n      function_name: foo,\n      arguments: [\n        aleo16w8t56s7v6ud7vu33fr388ph0dq0c7yhp597cyjt88rr3nultcyqcyk9yy\n      ]\n    },\n    {\n      program_id: child.aleo,\n      function_name: foo,\n      arguments: [\n        aleo16w8t56s7v6ud7vu33fr388ph0dq0c7yhp597cyjt88rr3nultcyqcyk9yy\n      ]\n    },\n    {\n      program_id: child.aleo,\n      function_name: foo,\n      arguments: [\n        aleo16w8t56s7v6ud7vu33fr388ph0dq0c7yhp597cyjt88rr3nultcyqcyk9yy\n      ]\n    },\n    {\n      program_id: child.aleo,\n      function_name: boo,\n      arguments: [\n        aleo16w8t56s7v6ud7vu33fr388ph0dq0c7yhp597cyjt88rr3nultcyqcyk9yy\n      ]\n    }\n  \n  ]\n}"}'
+      - '{"type":"future","id":"7394141067016125812495697738481918699806105328524107874699813647057124800624field","value":{"program_id":"parent.aleo","function_name":"foo","arguments":[{"program_id":"child.aleo","function_name":"boo","arguments":["aleo16w8t56s7v6ud7vu33fr388ph0dq0c7yhp597cyjt88rr3nultcyqcyk9yy"]},{"program_id":"child.aleo","function_name":"boo","arguments":["aleo16w8t56s7v6ud7vu33fr388ph0dq0c7yhp597cyjt88rr3nultcyqcyk9yy"]},{"program_id":"child.aleo","function_name":"foo","arguments":["aleo16w8t56s7v6ud7vu33fr388ph0dq0c7yhp597cyjt88rr3nultcyqcyk9yy"]},{"program_id":"child.aleo","function_name":"foo","arguments":["aleo16w8t56s7v6ud7vu33fr388ph0dq0c7yhp597cyjt88rr3nultcyqcyk9yy"]},{"program_id":"child.aleo","function_name":"foo","arguments":["aleo16w8t56s7v6ud7vu33fr388ph0dq0c7yhp597cyjt88rr3nultcyqcyk9yy"]},{"program_id":"child.aleo","function_name":"boo","arguments":["aleo16w8t56s7v6ud7vu33fr388ph0dq0c7yhp597cyjt88rr3nultcyqcyk9yy"]}]}}'
   speculate: the execution was accepted
   add_next_block: succeeded.
 additional:
 - child_outputs:
     child.aleo/foo:
       outputs:
-      - '{"type":"future","id":"6485462397262850046279599964897487902629807964673846177946918357772313064816field","value":"{\n  program_id: child.aleo,\n  function_name: foo,\n  arguments: [\n    aleo16w8t56s7v6ud7vu33fr388ph0dq0c7yhp597cyjt88rr3nultcyqcyk9yy\n  ]\n}"}'
+      - '{"type":"future","id":"6485462397262850046279599964897487902629807964673846177946918357772313064816field","value":{"program_id":"child.aleo","function_name":"foo","arguments":["aleo16w8t56s7v6ud7vu33fr388ph0dq0c7yhp597cyjt88rr3nultcyqcyk9yy"]}}'
     child.aleo/boo:
       outputs:
-      - '{"type":"future","id":"4231693232342038432096905559496831296662691811920617963100466383368358118453field","value":"{\n  program_id: child.aleo,\n  function_name: boo,\n  arguments: [\n    aleo16w8t56s7v6ud7vu33fr388ph0dq0c7yhp597cyjt88rr3nultcyqcyk9yy\n  ]\n}"}'
+      - '{"type":"future","id":"4231693232342038432096905559496831296662691811920617963100466383368358118453field","value":{"program_id":"child.aleo","function_name":"boo","arguments":["aleo16w8t56s7v6ud7vu33fr388ph0dq0c7yhp597cyjt88rr3nultcyqcyk9yy"]}}'
     credits.aleo/fee_public:
       outputs:
-      - '{"type":"future","id":"6200338300657724671187031761556738257498692708872458275509558643397811394605field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx,\n    170808u64\n  ]\n}"}'
+      - '{"type":"future","id":"6200338300657724671187031761556738257498692708872458275509558643397811394605field","value":{"program_id":"credits.aleo","function_name":"fee_public","arguments":["aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx","170808u64"]}}'

@@ -23,6 +23,37 @@ pub enum Argument<N: Network> {
     Future(Future<N>),
 }
 
+impl<N: Network> Serialize for Argument<N> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match serializer.is_human_readable() {
+            true => match self {
+                Self::Plaintext(value) => serializer.collect_str(value),
+                Self::Future(value) => value.serialize(serializer),
+            },
+            false => ToBytesSerializer::serialize_with_size_encoding(self, serializer),
+        }
+    }
+}
+
+impl<'de, N: Network> Deserialize<'de> for Argument<N> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        match deserializer.is_human_readable() {
+            true => {
+                let value = serde_json::Value::deserialize(deserializer)?;
+
+                if let Some(plaintext) = value.as_str() {
+                    let plaintext = Plaintext::from_str(plaintext).map_err(de::Error::custom)?;
+                    Ok(Argument::Plaintext(plaintext))
+                } else {
+                    let future = Future::deserialize(value).map_err(de::Error::custom)?;
+                    Ok(Argument::Future(future))
+                }
+            }
+            false => FromBytesDeserializer::<Self>::deserialize_with_size_encoding(deserializer, "argument"),
+        }
+    }
+}
+
 impl<N: Network> Equal<Self> for Argument<N> {
     type Output = Boolean<N>;
 

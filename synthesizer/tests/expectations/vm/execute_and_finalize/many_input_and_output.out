@@ -88,19 +88,19 @@ additional:
 - child_outputs:
     credits.aleo/fee_public:
       outputs:
-      - '{"type":"future","id":"30377576158265317558755379954993028591609254873982684478794593156637801471field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo10knkelvnd55fsaarm25wch7p9suf2tqlgwy5k4nxwms6d262xyfqm2tccr,\n    1153u64\n  ]\n}"}'
+      - '{"type":"future","id":"30377576158265317558755379954993028591609254873982684478794593156637801471field","value":{"program_id":"credits.aleo","function_name":"fee_public","arguments":["aleo10knkelvnd55fsaarm25wch7p9suf2tqlgwy5k4nxwms6d262xyfqm2tccr","1153u64"]}}'
 - child_outputs:
     credits.aleo/fee_public:
       outputs:
-      - '{"type":"future","id":"7152805026835105172873716091653957285497801764420533865012961263887557911642field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo10knkelvnd55fsaarm25wch7p9suf2tqlgwy5k4nxwms6d262xyfqm2tccr,\n    2363u64\n  ]\n}"}'
+      - '{"type":"future","id":"7152805026835105172873716091653957285497801764420533865012961263887557911642field","value":{"program_id":"credits.aleo","function_name":"fee_public","arguments":["aleo10knkelvnd55fsaarm25wch7p9suf2tqlgwy5k4nxwms6d262xyfqm2tccr","2363u64"]}}'
 - child_outputs:
     credits.aleo/fee_public:
       outputs:
-      - '{"type":"future","id":"5397557371756282637972927997465824050186286008844168472103952190845537160019field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo10knkelvnd55fsaarm25wch7p9suf2tqlgwy5k4nxwms6d262xyfqm2tccr,\n    3331u64\n  ]\n}"}'
+      - '{"type":"future","id":"5397557371756282637972927997465824050186286008844168472103952190845537160019field","value":{"program_id":"credits.aleo","function_name":"fee_public","arguments":["aleo10knkelvnd55fsaarm25wch7p9suf2tqlgwy5k4nxwms6d262xyfqm2tccr","3331u64"]}}'
 - child_outputs:
     credits.aleo/fee_public:
       outputs:
-      - '{"type":"future","id":"8367501851131349939921973827792399149698467053837913250296494006847175395216field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo10knkelvnd55fsaarm25wch7p9suf2tqlgwy5k4nxwms6d262xyfqm2tccr,\n    2591u64\n  ]\n}"}'
+      - '{"type":"future","id":"8367501851131349939921973827792399149698467053837913250296494006847175395216field","value":{"program_id":"credits.aleo","function_name":"fee_public","arguments":["aleo10knkelvnd55fsaarm25wch7p9suf2tqlgwy5k4nxwms6d262xyfqm2tccr","2591u64"]}}'
 - child_outputs:
     child.aleo/inner_trash:
       outputs:
@@ -122,7 +122,7 @@ additional:
       - '{"type":"public","id":"1746336793593389412246115464856173762500352378534009993091610413102060730893field","value":"15u8"}'
     credits.aleo/fee_public:
       outputs:
-      - '{"type":"future","id":"988988974085236680039086524462634791496238571529345895766489488832296993230field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo10knkelvnd55fsaarm25wch7p9suf2tqlgwy5k4nxwms6d262xyfqm2tccr,\n    7558u64\n  ]\n}"}'
+      - '{"type":"future","id":"988988974085236680039086524462634791496238571529345895766489488832296993230field","value":{"program_id":"credits.aleo","function_name":"fee_public","arguments":["aleo10knkelvnd55fsaarm25wch7p9suf2tqlgwy5k4nxwms6d262xyfqm2tccr","7558u64"]}}'
 - child_outputs:
     child.aleo/inner_trash_private:
       outputs:
@@ -144,4 +144,4 @@ additional:
       - '{"type":"private","id":"2779056585045156925102248171451904784889711185488933072280044292443284680942field","value":"ciphertext1qyqg7e5rdtam09s2zwzmg3j3ppfppnczyvrrwaezg5xtv60njx0vjpcm0pvrh"}'
     credits.aleo/fee_public:
       outputs:
-      - '{"type":"future","id":"1037365655411343263930966978478556227868512825605719649881734132931731411910field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo10knkelvnd55fsaarm25wch7p9suf2tqlgwy5k4nxwms6d262xyfqm2tccr,\n    11438u64\n  ]\n}"}'
+      - '{"type":"future","id":"1037365655411343263930966978478556227868512825605719649881734132931731411910field","value":{"program_id":"credits.aleo","function_name":"fee_public","arguments":["aleo10knkelvnd55fsaarm25wch7p9suf2tqlgwy5k4nxwms6d262xyfqm2tccr","11438u64"]}}'

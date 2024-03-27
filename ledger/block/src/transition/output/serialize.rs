@@ -113,10 +113,13 @@ impl<'de, N: Network> Deserialize<'de> for Output<N> {
                         })
                     }
                     Some("external_record") => Output::ExternalRecord(id),
-                    Some("future") => Output::Future(id, match output.get("value").and_then(|v| v.as_str()) {
-                        Some(value) => Some(Future::<N>::from_str(value).map_err(de::Error::custom)?),
-                        None => None,
-                    }),
+                    Some("future") => {
+                        // Return the Future.
+                        Output::Future(id, match output.get("value") {
+                            Some(value) => Some(Future::<N>::deserialize(value).map_err(de::Error::custom)?),
+                            None => None,
+                        })
+                    }
                     _ => return Err(de::Error::custom("Invalid output type")),
                 };
 
