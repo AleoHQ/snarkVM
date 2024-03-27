@@ -348,7 +348,8 @@ impl<N: Network> Block<N> {
             None => 0u128,
         };
 
-        let (expected_cumulative_proof_target, is_coinbase_target_reached) = match self.solutions.deref() {
+        // Compute the cumulative proof target.
+        let cumulative_proof_target = match self.solutions.deref() {
             Some(coinbase) => {
                 // Ensure the puzzle proof is valid.
                 if let Err(e) =
@@ -367,24 +368,19 @@ impl<N: Network> Block<N> {
                 }
 
                 // Compute the actual cumulative proof target (which can exceed the coinbase target).
-                let cumulative_proof_target =
-                    previous_block.cumulative_proof_target().saturating_add(combined_proof_target);
-                // Determine if the coinbase target is reached.
-                let is_coinbase_target_reached = cumulative_proof_target >= previous_block.coinbase_target() as u128;
-                // Compute the block cumulative proof target (which cannot exceed the coinbase target).
-                let expected_cumulative_proof_target = match is_coinbase_target_reached {
-                    true => 0u128,
-                    false => cumulative_proof_target,
-                };
-
-                (expected_cumulative_proof_target, is_coinbase_target_reached)
+                previous_block.cumulative_proof_target().saturating_add(combined_proof_target)
             }
-            None => {
-                // Determine the cumulative proof target.
-                let expected_cumulative_proof_target = previous_block.cumulative_proof_target();
+            None => previous_block.cumulative_proof_target(),
+        };
 
-                (expected_cumulative_proof_target, false)
-            }
+        // Compute the coinbase target threshold.
+        let coinbase_threshold = previous_block.coinbase_target().saturating_div(2) as u128;
+        // Determine if the coinbase target threshold is reached.
+        let is_coinbase_threshold_reached = cumulative_proof_target >= coinbase_threshold;
+        // Compute the block cumulative proof target (which cannot exceed the coinbase target).
+        let expected_cumulative_proof_target = match is_coinbase_threshold_reached {
+            true => 0u128,
+            false => cumulative_proof_target,
         };
 
         // Compute the expected cumulative weight.
@@ -404,12 +400,12 @@ impl<N: Network> Block<N> {
             proof_target(expected_coinbase_target, N::GENESIS_PROOF_TARGET, N::MAX_SOLUTIONS_AS_POWER_OF_TWO);
 
         // Determine the expected last coinbase target.
-        let expected_last_coinbase_target = match is_coinbase_target_reached {
+        let expected_last_coinbase_target = match is_coinbase_threshold_reached {
             true => expected_coinbase_target,
             false => previous_block.last_coinbase_target(),
         };
         // Determine the expected last coinbase timestamp.
-        let expected_last_coinbase_timestamp = match is_coinbase_target_reached {
+        let expected_last_coinbase_timestamp = match is_coinbase_threshold_reached {
             true => timestamp,
             false => previous_block.last_coinbase_timestamp(),
         };

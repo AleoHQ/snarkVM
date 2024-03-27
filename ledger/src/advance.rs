@@ -261,10 +261,12 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         let next_cumulative_weight = previous_block.cumulative_weight().saturating_add(combined_proof_target);
         // Compute the next cumulative proof target.
         let next_cumulative_proof_target = latest_cumulative_proof_target.saturating_add(combined_proof_target);
-        // Determine if the coinbase target is reached.
-        let is_coinbase_target_reached = next_cumulative_proof_target >= latest_coinbase_target as u128;
+        // Compute the coinbase target threshold.
+        let latest_coinbase_threshold = latest_coinbase_target.saturating_div(2) as u128;
+        // Determine if the coinbase target threshold is reached.
+        let is_coinbase_threshold_reached = next_cumulative_proof_target >= latest_coinbase_threshold;
         // Update the next cumulative proof target, if necessary.
-        let next_cumulative_proof_target = match is_coinbase_target_reached {
+        let next_cumulative_proof_target = match is_coinbase_threshold_reached {
             true => 0,
             false => next_cumulative_proof_target,
         };
@@ -282,7 +284,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             proof_target(next_coinbase_target, N::GENESIS_PROOF_TARGET, N::MAX_SOLUTIONS_AS_POWER_OF_TWO);
 
         // Construct the next last coinbase target and next last coinbase timestamp.
-        let (next_last_coinbase_target, next_last_coinbase_timestamp) = match is_coinbase_target_reached {
+        let (next_last_coinbase_target, next_last_coinbase_timestamp) = match is_coinbase_threshold_reached {
             true => (next_coinbase_target, next_timestamp),
             false => (previous_block.last_coinbase_target(), previous_block.last_coinbase_timestamp()),
         };
