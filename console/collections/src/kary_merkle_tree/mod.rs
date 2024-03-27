@@ -89,8 +89,15 @@ impl<LH: LeafHash<Hash = PH::Hash>, PH: PathHash, const DEPTH: u8, const ARITY: 
         // Compute the empty hash.
         let empty_hash = path_hasher.hash_empty::<ARITY>()?;
 
+        // Calculate the size of the tree which excludes leafless nodes.
+        let arity = ARITY as usize;
+        let minimum_tree_size = std::cmp::max(
+            1,
+            num_nodes + leaves.len() + if leaves.len() % arity == 0 { 0 } else { arity - leaves.len() % arity },
+        );
+
         // Initialize the Merkle tree.
-        let mut tree = vec![empty_hash; tree_size];
+        let mut tree = vec![empty_hash; minimum_tree_size];
 
         // Compute and store each leaf hash.
         tree[num_nodes..num_nodes + leaves.len()].clone_from_slice(&leaf_hasher.hash_leaves(leaves)?);
@@ -98,6 +105,7 @@ impl<LH: LeafHash<Hash = PH::Hash>, PH: PathHash, const DEPTH: u8, const ARITY: 
 
         // Compute and store the hashes for each level, iterating from the penultimate level to the root level.
         let mut start_index = num_nodes;
+        let mut current_empty_node_hash = path_hasher.hash_children(&vec![empty_hash; arity])?;
         // Compute the start index of the current level.
         while let Some(start) = parent::<ARITY>(start_index) {
             // Compute the end index of the current level.
@@ -105,12 +113,31 @@ impl<LH: LeafHash<Hash = PH::Hash>, PH: PathHash, const DEPTH: u8, const ARITY: 
 
             // Construct the children for each node in the current level.
             let child_nodes = (start..end)
-                .map(|i| child_indexes::<ARITY>(i).map(|child_index| tree[child_index]).collect::<Vec<_>>())
+                .map(|i| {
+                    // Prepare an iterator over then children, being mindful of possible missing leaves.
+                    let child_iter = || child_indexes::<ARITY>(i).map(|child_index| tree.get(child_index).copied());
+
+                    // At the leaf level just return the leaves, or `None` in case the node has none.
+                    if current_empty_node_hash == empty_hash {
+                        return child_iter().collect::<Option<Vec<_>>>();
+                    }
+
+                    // Check if the children aren't all derived from empty hashes.
+                    if child_iter().all(|hash| hash == Some(current_empty_node_hash)) {
+                        return None;
+                    }
+
+                    // Collect the children.
+                    child_iter().collect::<Option<Vec<_>>>()
+                })
                 .collect::<Vec<_>>();
+
             // Compute and store the hashes for each node in the current level.
-            tree[start..end].clone_from_slice(&path_hasher.hash_all_children(&child_nodes)?);
+            tree[start..end].clone_from_slice(&path_hasher.hash_all_children(&child_nodes, current_empty_node_hash)?);
             // Update the start index for the next level.
             start_index = start;
+            // Update the empty node hash for the next level.
+            current_empty_node_hash = path_hasher.hash_children(&vec![current_empty_node_hash; arity])?;
         }
         lap!(timer, "Hashed {} levels", tree_depth);
 

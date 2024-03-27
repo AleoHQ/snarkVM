@@ -170,7 +170,7 @@ fn check_merkle_tree_depth_3_arity_3_padded<LH: LeafHash<Hash = PH::Hash>, PH: P
 
     // Construct the Merkle tree for the given leaves.
     let merkle_tree = KaryMerkleTree::<LH, PH, 3, ARITY>::new(leaf_hasher, path_hasher, &leaves)?;
-    assert_eq!(40, merkle_tree.tree.len());
+    assert_eq!(25, merkle_tree.tree.len());
     assert_eq!(10, merkle_tree.number_of_leaves);
 
     // Depth 3.
@@ -194,7 +194,7 @@ fn check_merkle_tree_depth_3_arity_3_padded<LH: LeafHash<Hash = PH::Hash>, PH: P
     assert_eq!(expected_leaf7, merkle_tree.tree[20]);
     assert_eq!(expected_leaf8, merkle_tree.tree[21]);
     assert_eq!(expected_leaf9, merkle_tree.tree[22]);
-    for i in 23..40 {
+    for i in 23..25 {
         assert_eq!(path_hasher.hash_empty::<ARITY>()?, merkle_tree.tree[i]);
     }
 
