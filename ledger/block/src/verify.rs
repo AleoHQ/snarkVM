@@ -348,67 +348,39 @@ impl<N: Network> Block<N> {
             None => 0u128,
         };
 
-        // Compute the cumulative proof target.
-        let cumulative_proof_target = match self.solutions.deref() {
-            Some(coinbase) => {
-                // Ensure the puzzle proof is valid.
-                if let Err(e) =
-                    current_puzzle.check_solutions(coinbase, current_epoch_hash, previous_block.proof_target())
-                {
-                    bail!("Block {height} contains an invalid puzzle proof - {e}");
-                }
-
-                // Ensure that the block cumulative proof target is less than the previous block's coinbase target.
-                // Note: This is a sanity check, as the cumulative proof target resets to 0 if the
-                // coinbase target was reached in this block.
-                if self.cumulative_proof_target() >= previous_block.coinbase_target() as u128 {
-                    bail!(
-                        "The cumulative proof target in block {height} must be less than the previous coinbase target"
-                    )
-                }
-
-                // Compute the actual cumulative proof target (which can exceed the coinbase target).
-                previous_block.cumulative_proof_target().saturating_add(combined_proof_target)
+        // Verify the solutions.
+        if let Some(coinbase) = self.solutions.deref() {
+            // Ensure the puzzle proof is valid.
+            if let Err(e) = current_puzzle.check_solutions(coinbase, current_epoch_hash, previous_block.proof_target())
+            {
+                bail!("Block {height} contains an invalid puzzle proof - {e}");
             }
-            None => previous_block.cumulative_proof_target(),
+
+            // Ensure that the block cumulative proof target is less than the previous block's coinbase target.
+            // Note: This is a sanity check, as the cumulative proof target resets to 0 if the
+            // coinbase target was reached in this block.
+            if self.cumulative_proof_target() >= previous_block.coinbase_target() as u128 {
+                bail!("The cumulative proof target in block {height} must be less than the previous coinbase target")
+            }
         };
 
-        // Compute the coinbase target threshold.
-        let coinbase_threshold = previous_block.coinbase_target().saturating_div(2) as u128;
-        // Determine if the coinbase target threshold is reached.
-        let is_coinbase_threshold_reached = cumulative_proof_target >= coinbase_threshold;
-        // Compute the block cumulative proof target (which cannot exceed the coinbase target).
-        let expected_cumulative_proof_target = match is_coinbase_threshold_reached {
-            true => 0u128,
-            false => cumulative_proof_target,
-        };
-
-        // Compute the expected cumulative weight.
-        let expected_cumulative_weight = previous_block.cumulative_weight().saturating_add(combined_proof_target);
-
-        // Construct the next coinbase target.
-        let expected_coinbase_target = coinbase_target(
+        // Calculate the next coinbase targets and timestamps.
+        let (
+            expected_coinbase_target,
+            expected_proof_target,
+            expected_cumulative_proof_target,
+            expected_cumulative_weight,
+            expected_last_coinbase_target,
+            expected_last_coinbase_timestamp,
+        ) = to_next_targets::<N>(
+            self.cumulative_proof_target(),
+            combined_proof_target,
+            previous_block.coinbase_target(),
+            previous_block.cumulative_weight(),
             previous_block.last_coinbase_target(),
             previous_block.last_coinbase_timestamp(),
             timestamp,
-            N::ANCHOR_TIME,
-            N::NUM_BLOCKS_PER_EPOCH,
-            N::GENESIS_COINBASE_TARGET,
         )?;
-        // Ensure the proof target is correct.
-        let expected_proof_target =
-            proof_target(expected_coinbase_target, N::GENESIS_PROOF_TARGET, N::MAX_SOLUTIONS_AS_POWER_OF_TWO);
-
-        // Determine the expected last coinbase target.
-        let expected_last_coinbase_target = match is_coinbase_threshold_reached {
-            true => expected_coinbase_target,
-            false => previous_block.last_coinbase_target(),
-        };
-        // Determine the expected last coinbase timestamp.
-        let expected_last_coinbase_timestamp = match is_coinbase_threshold_reached {
-            true => timestamp,
-            false => previous_block.last_coinbase_timestamp(),
-        };
 
         // Calculate the expected coinbase reward.
         let expected_coinbase_reward = coinbase_reward(

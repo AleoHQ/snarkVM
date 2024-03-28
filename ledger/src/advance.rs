@@ -224,6 +224,12 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         let latest_cumulative_proof_target = previous_block.cumulative_proof_target();
         // Retrieve the latest coinbase target.
         let latest_coinbase_target = previous_block.coinbase_target();
+        // Retrieve the latest cumulative weight.
+        let latest_cumulative_weight = previous_block.cumulative_weight();
+        // Retrieve the last coinbase target.
+        let last_coinbase_target = previous_block.last_coinbase_target();
+        // Retrieve the last coinbase timestamp.
+        let last_coinbase_timestamp = previous_block.last_coinbase_timestamp();
 
         // Compute the next round number.
         let next_round = match subdag {
@@ -257,37 +263,24 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             }
             None => OffsetDateTime::now_utc().unix_timestamp(),
         };
-        // Compute the next cumulative weight.
-        let next_cumulative_weight = previous_block.cumulative_weight().saturating_add(combined_proof_target);
-        // Compute the next cumulative proof target.
-        let next_cumulative_proof_target = latest_cumulative_proof_target.saturating_add(combined_proof_target);
-        // Compute the coinbase target threshold.
-        let latest_coinbase_threshold = latest_coinbase_target.saturating_div(2) as u128;
-        // Determine if the coinbase target threshold is reached.
-        let is_coinbase_threshold_reached = next_cumulative_proof_target >= latest_coinbase_threshold;
-        // Update the next cumulative proof target, if necessary.
-        let next_cumulative_proof_target = match is_coinbase_threshold_reached {
-            true => 0,
-            false => next_cumulative_proof_target,
-        };
-        // Construct the next coinbase target.
-        let next_coinbase_target = coinbase_target(
-            previous_block.last_coinbase_target(),
-            previous_block.last_coinbase_timestamp(),
-            next_timestamp,
-            N::ANCHOR_TIME,
-            N::NUM_BLOCKS_PER_EPOCH,
-            N::GENESIS_COINBASE_TARGET,
-        )?;
-        // Construct the next proof target.
-        let next_proof_target =
-            proof_target(next_coinbase_target, N::GENESIS_PROOF_TARGET, N::MAX_SOLUTIONS_AS_POWER_OF_TWO);
 
-        // Construct the next last coinbase target and next last coinbase timestamp.
-        let (next_last_coinbase_target, next_last_coinbase_timestamp) = match is_coinbase_threshold_reached {
-            true => (next_coinbase_target, next_timestamp),
-            false => (previous_block.last_coinbase_target(), previous_block.last_coinbase_timestamp()),
-        };
+        // Calculate the next coinbase targets and timestamps.
+        let (
+            next_coinbase_target,
+            next_proof_target,
+            next_cumulative_proof_target,
+            next_cumulative_weight,
+            next_last_coinbase_target,
+            next_last_coinbase_timestamp,
+        ) = to_next_targets::<N>(
+            latest_cumulative_proof_target,
+            combined_proof_target,
+            latest_coinbase_target,
+            latest_cumulative_weight,
+            last_coinbase_target,
+            last_coinbase_timestamp,
+            next_timestamp,
+        )?;
 
         // Calculate the coinbase reward.
         let coinbase_reward = coinbase_reward(
